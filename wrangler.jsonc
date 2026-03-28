@@ -1,0 +1,13 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "bookshot-proxy",
+  "main": "bookshot-worker.js",
+  "compatibility_date": "2026-03-28",
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "ALLOWED_ORIGINS": "https://titan11111.github.io,http://localhost:3000,http://127.0.0.1:3000,http://localhost:8787"
+  }
+}

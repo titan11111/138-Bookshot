@@ -178,6 +178,7 @@
       font-family: monospace; font-size: 14px;
       outline: none;
       transition: border-color .2s, box-shadow .2s;
+      appearance: none;
       -webkit-appearance: none;
     }
     .ff-input:focus {
@@ -335,6 +336,49 @@
     .menu-label { font-size: 16px; font-weight: 700; color: var(--c-gold-hi); }
     .menu-desc  { font-size: 12px; color: var(--c-silver); margin-top: 2px; }
     .menu-arr   { color: var(--c-gold); font-size: 18px; }
+
+    .step-guide {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border: 1px solid rgba(255,215,0,.35);
+      background: rgba(8,8,32,.72);
+      border-radius: 3px;
+      text-align: left;
+    }
+    .step-guide-title {
+      font-size: 12px;
+      color: var(--c-gold-hi);
+      font-weight: 700;
+      letter-spacing: .08em;
+      margin-bottom: 6px;
+    }
+    .step-guide-body {
+      font-size: 12px;
+      line-height: 1.7;
+      color: var(--c-silver);
+    }
+    .step-chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+    }
+    .step-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      border: 1px solid var(--c-dim);
+      color: var(--c-silver);
+      background: rgba(0,0,0,.28);
+    }
+    .step-chip.active {
+      border-color: var(--c-cyan);
+      color: var(--c-cyan);
+      background: rgba(0,204,255,.12);
+    }
 
     /* ═══════════════════════════════════════════
        API STATUS BADGE
@@ -670,6 +714,35 @@
 })();
 
 /* ═══════════════════════════════════════════════════════
+   解析サービス設定
+   - ローカル開発: http://localhost:3000 （server.js）
+   - 公開環境: Cloudflare Worker などのプロキシURL
+   ※ フロントから Anthropic API を直接呼ばない
+═══════════════════════════════════════════════════════ */
+var LOCAL_PROXY_MODE = (
+  (window.location.hostname === 'localhost' ||
+   window.location.hostname === '127.0.0.1') &&
+  window.location.port === '3000'
+);
+
+// 公開用の Worker URL を設定してください。
+// 例: https://bookshot-proxy.your-subdomain.workers.dev
+var REMOTE_PROXY_URL = 'https://YOUR-BOOKSHOT-WORKER.workers.dev';
+var HAS_REMOTE_PROXY =
+  /^https?:\/\//.test(REMOTE_PROXY_URL) &&
+  REMOTE_PROXY_URL.indexOf('YOUR-BOOKSHOT-WORKER') === -1;
+
+var USE_PROXY = LOCAL_PROXY_MODE || HAS_REMOTE_PROXY;
+var API_BASE_URL = LOCAL_PROXY_MODE ? '' : (HAS_REMOTE_PROXY ? REMOTE_PROXY_URL.replace(/\/+$/,'') : '');
+var URL_FLAGS = new URLSearchParams(window.location.search);
+var IS_ADMIN_MODE = URL_FLAGS.get('admin') === '1' || LOCAL_PROXY_MODE;
+var DEMO_MODE = !USE_PROXY && !IS_ADMIN_MODE;
+
+function getApiUrl(path) {
+  return API_BASE_URL ? (API_BASE_URL + path) : path;
+}
+
+/* ═══════════════════════════════════════════════════════
    STATE MACHINE
 ═══════════════════════════════════════════════════════ */
 var S = {
@@ -687,11 +760,11 @@ var S = {
 
 var state = {
   screen:            S.TITLE,
-  apiKey:            sessionStorage.getItem('bs_key') || '',
   imgDataUrl:        null,   // display
   imgBase64:         null,   // API送信用
   imgMediaType:      'image/jpeg',
   analysisResult:    null,   // { extractedBooks, recommendedBooks, timestamp }
+  analysisMeta:      null,
   selectedBookNum:   null,
   generatedPost:     null,
   history:           [],
@@ -763,10 +836,21 @@ function tplTitle() {
     <div class="title-main">Book Shot</div>
     <div class="title-sub-line">書籍スクリーンショット解析システム</div>
 
-    <div class="win" style="width:100%;max-width:300px;padding:20px">
-      <button class="btn cyan" onclick="goMenu()">✨ 冒険をはじめる</button>
+    <div class="win" style="width:100%;max-width:340px;padding:20px">
+      <div class="step-guide" style="margin-top:0;margin-bottom:14px">
+        <div class="step-guide-title">はじめて使う方へ</div>
+        <div class="step-guide-body">
+          まずは接続状態を確認し、そのあとスクリーンショット画像を選んで解析します。
+        </div>
+        <div class="step-chip-row">
+          <span class="step-chip active">STEP 1 接続確認</span>
+          <span class="step-chip">STEP 2 画像選択</span>
+          <span class="step-chip">STEP 3 結果確認</span>
+        </div>
+      </div>
+      <button class="btn cyan" onclick="goMenu()">✨ 使い始める</button>
       <div class="gap8"></div>
-      <button class="btn" onclick="goHistory()">📖 記録を振り返る</button>
+      <button class="btn" onclick="goHistory()">📖 前回の結果を見る</button>
     </div>
 
     <div class="press-start">▼ タップして開始 ▼</div>
@@ -775,42 +859,120 @@ function tplTitle() {
 
 /* ── MENU ── */
 function tplMenu() {
-  var hasKey = !!state.apiKey;
+  if(!IS_ADMIN_MODE){
+    return `
+    <div class="screen anim-slide">
+      <div class="screen-hd">
+        <div class="screen-title">✦ メインメニュー ✦</div>
+        <div class="screen-sub">画像を選ぶだけで本の内容をまとめます</div>
+      </div>
+      <div class="divider"></div>
+
+      <div class="win" style="margin-top:10px">
+        <div class="step-guide-title">使い方</div>
+        <div class="step-guide-body">
+          1. スクリーンショット画像を選ぶ<br>
+          2. 解析ボタンを押す<br>
+          3. 結果を見て、必要なら投稿文をコピーする
+        </div>
+      </div>
+
+      ${DEMO_MODE ? `
+      <div class="no-capture-banner" style="margin-top:12px">
+        <span class="no-capture-icon">✨</span>
+        <span>現在はお試しモードです。実際のAPI接続が未設定でも、操作の流れをそのまま確認できます。</span>
+      </div>
+      ` : ''}
+
+      <div class="menu-list">
+        <div class="menu-item" onclick="startAnalysis()">
+          <span class="menu-icon">📸</span>
+          <div class="menu-body">
+            <div class="menu-label">スクリーンショットを選ぶ</div>
+            <div class="menu-desc">画像選択画面へ進みます</div>
+          </div>
+          <span class="menu-arr">▶</span>
+        </div>
+        <div class="menu-item" onclick="goHistory()">
+          <span class="menu-icon">📖</span>
+          <div class="menu-body">
+            <div class="menu-label">前回の結果を見る</div>
+            <div class="menu-desc">${state.history.length}件の記録を確認できます</div>
+          </div>
+          <span class="menu-arr">▶</span>
+        </div>
+      </div>
+
+      <div style="text-align:center;margin-top:20px">
+        <button class="back-btn" onclick="setState({screen:S.TITLE})">← タイトルへ戻る</button>
+      </div>
+    </div>`;
+  }
+
+  var serviceReady = USE_PROXY;
+  var primaryIcon  = serviceReady ? '📸' : '⚙️';
+  var primaryLabel = serviceReady ? 'STEP 2 画像を選んで解析する' : 'STEP 1 接続方法を確認する';
+  var primaryDesc  = serviceReady
+    ? '次はスクリーンショット画像を選ぶ画面へ進みます'
+    : '最初に解析サービス設定を開いて接続状態を確認します';
+  var primaryAction = serviceReady ? 'startAnalysis()' : 'goApiSetup()';
+  var helperText = serviceReady
+    ? '次に押すなら「STEP 2 画像を選んで解析する」です。画像選択画面へ移動します。'
+    : '次に押すなら「STEP 1 接続方法を確認する」です。設定画面で接続方法を確認してください。';
   return `
   <div class="screen anim-slide">
     <div class="screen-hd">
       <div class="screen-title">✦ メインメニュー ✦</div>
       <div class="screen-sub">BookShot — 書籍解析システム</div>
-      <div style="margin-top:9px">
-        <span class="api-badge ${hasKey?'ok':'ng'}">
-          ${hasKey ? '● API接続済み' : '● API未設定'}
+      <div style="margin-top:9px;display:flex;gap:7px;justify-content:center;flex-wrap:wrap">
+        <span class="api-badge ${serviceReady?'ok':'ng'}">
+          ${serviceReady ? '● 解析サービス接続済み' : '● 解析サービス未設定'}
+        </span>
+        <span class="api-badge ${USE_PROXY?'ok':'ng'}" title="${LOCAL_PROXY_MODE ? 'localhost:3000 経由' : (HAS_REMOTE_PROXY ? '公開用プロキシ経由' : '解析サービスURLが未設定')}">
+          ${LOCAL_PROXY_MODE ? '💻 ローカル接続' : (HAS_REMOTE_PROXY ? '☁️ 公開用接続' : '⚠️ 要設定')}
         </span>
       </div>
+      ${!USE_PROXY ? `
+      <div class="no-capture-banner" style="margin-top:10px;text-align:left">
+        <span class="no-capture-icon">💡</span>
+        <span style="font-size:11px">公開前に <code style="background:rgba(0,0,0,.4);padding:2px 5px;border-radius:3px">REMOTE_PROXY_URL</code> へ Worker の URL を設定してください。ローカル確認は <code style="background:rgba(0,0,0,.4);padding:2px 5px;border-radius:3px">ANTHROPIC_API_KEY=... node server.js</code> です。</span>
+      </div>
+      ` : ''}
     </div>
     <div class="divider"></div>
 
+    <div class="win" style="margin-top:10px">
+      <div class="step-guide-title">今やること</div>
+      <div class="step-guide-body">${helperText}</div>
+      <div class="step-chip-row">
+        <span class="step-chip ${serviceReady ? '' : 'active'}">STEP 1 接続確認</span>
+        <span class="step-chip ${serviceReady ? 'active' : ''}">STEP 2 画像選択</span>
+        <span class="step-chip">STEP 3 結果確認</span>
+      </div>
+    </div>
+
     <div class="menu-list">
-      <div class="menu-item" onclick="startAnalysis()">
-        <span class="menu-icon">📸</span>
+      <div class="menu-item" onclick="${primaryAction}">
+        <span class="menu-icon">${primaryIcon}</span>
         <div class="menu-body">
-          <div class="menu-label">新しい解析</div>
-          <div class="menu-desc">スクリーンショットから書籍を自動認識</div>
+          <div class="menu-label">${primaryLabel}</div>
+          <div class="menu-desc">${primaryDesc}</div>
+        </div>
+        <span class="menu-arr">▶</span>
+      </div>
+      <div class="menu-item" onclick="${serviceReady ? 'goApiSetup()' : 'startAnalysis()'}">
+        <span class="menu-icon">${serviceReady ? '⚙️' : '📸'}</span>
+        <div class="menu-body">
+          <div class="menu-label">${serviceReady ? '接続状態を確認する' : '画像選択へ進む'}</div>
+          <div class="menu-desc">${serviceReady ? 'バックエンドの接続テストと運用メモを見る' : '未設定なら設定画面へ案内されます'}</div>
         </div>
         <span class="menu-arr">▶</span>
       </div>
       <div class="menu-item" onclick="goHistory()">
         <span class="menu-icon">📖</span>
         <div class="menu-body">
-          <div class="menu-label">解析履歴</div>
-          <div class="menu-desc">${state.history.length}件の記録があります</div>
-        </div>
-        <span class="menu-arr">▶</span>
-      </div>
-      <div class="menu-item" onclick="goApiSetup()">
-        <span class="menu-icon">⚙️</span>
-        <div class="menu-body">
-          <div class="menu-label">APIキー設定</div>
-          <div class="menu-desc">Anthropic Claude APIキーを管理</div>
+          <div class="menu-label">結果と履歴を見る</div>
+          <div class="menu-desc">${state.history.length}件の記録を確認できます</div>
         </div>
         <span class="menu-arr">▶</span>
       </div>
@@ -824,50 +986,83 @@ function tplMenu() {
 
 /* ── API SETUP ── */
 function tplApiSetup() {
+  if(!IS_ADMIN_MODE){
+    return `
+    <div class="screen anim-slide">
+      <div class="screen-hd">
+        <button class="back-btn" onclick="setState({screen:S.MENU})">← 戻る</button>
+        <div class="screen-title" style="margin-top:12px">ℹ️ ご案内</div>
+        <div class="screen-sub">この画面は管理用です</div>
+      </div>
+      <div class="divider"></div>
+      <div class="win" style="margin-top:12px">
+        <div class="step-guide-body">
+          通常の使い方では設定は不要です。<br>
+          メニューから「スクリーンショットを選ぶ」を押して、そのまま進んでください。
+        </div>
+      </div>
+      <div class="gap12"></div>
+      <button class="btn cyan" onclick="goImport()">📸 画像選択へ進む</button>
+    </div>`;
+  }
+
+  var statusClass = USE_PROXY ? 'ok' : 'ng';
+  var statusText = LOCAL_PROXY_MODE
+    ? 'ローカルサーバー接続中'
+    : (HAS_REMOTE_PROXY ? '公開用プロキシ接続中' : '解析サービス未設定');
+  var modeText = LOCAL_PROXY_MODE
+    ? '開発用の `server.js` を利用しています。APIキーは環境変数 `ANTHROPIC_API_KEY` で管理してください。'
+    : (HAS_REMOTE_PROXY
+      ? 'この公開版はバックエンド経由で Claude API を利用します。利用者が API キーを取得する必要はありません。'
+      : 'このビルドには公開用プロキシURLが未設定です。`REMOTE_PROXY_URL` に Worker のURLを設定してから公開してください。');
   return `
   <div class="screen anim-slide">
     <div class="screen-hd">
       <button class="back-btn" onclick="setState({screen:S.MENU})">← 戻る</button>
-      <div class="screen-title" style="margin-top:12px">⚙️ APIキー設定</div>
-      <div class="screen-sub">Claude API への接続設定</div>
+      <div class="screen-title" style="margin-top:12px">⚙️ 解析サービス設定</div>
+      <div class="screen-sub">STEP 1 / 3 まずここで接続方法を確認します</div>
     </div>
     <div class="divider"></div>
 
     <div class="win" style="margin-top:12px">
-      <div class="label">🔑 Anthropic Claude API Key</div>
-      <input id="key-inp" type="password" class="ff-input"
-        placeholder="sk-ant-api03-..."
-        value="${escH(state.apiKey)}"
-        autocomplete="off" spellcheck="false">
-      <div class="hint">※ このキーはセッション中のみ保持されます（閉じると削除）</div>
+      <div class="step-guide-title">この画面でやること</div>
+      <div class="step-guide-body">
+        ${USE_PROXY
+          ? 'まず接続テストを実行し、問題なければ「画像選択へ進む」を押してください。'
+          : 'まずこの画面で接続方法を確認してください。公開用URLの設定、またはローカルサーバー起動後に再度テストします。'}
+      </div>
+      <div class="step-chip-row">
+        <span class="step-chip active">STEP 1 接続確認</span>
+        <span class="step-chip">STEP 2 画像選択</span>
+        <span class="step-chip">STEP 3 結果確認</span>
+      </div>
+    </div>
+
+    <div class="win" style="margin-top:12px">
+      <div class="label">🔒 接続モード</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span class="api-badge ${statusClass}">${statusText}</span>
+        <span class="api-badge ${USE_PROXY?'ok':'ng'}">${LOCAL_PROXY_MODE ? 'localhost:3000' : (HAS_REMOTE_PROXY ? escH(API_BASE_URL) : '未設定')}</span>
+      </div>
+      <div class="hint" style="margin-top:10px">${modeText}</div>
     </div>
 
     <div class="gap12"></div>
-    <button class="btn cyan" onclick="saveKey()">💾 保存する</button>
-    <div class="gap8"></div>
-    <!-- ★ 接続テストボタン -->
-    <button class="btn" id="test-btn" onclick="runApiTest()" ${!state.apiKey ? 'disabled' : ''}>
-      🔌 接続テスト（疎通確認）
+    <button class="btn cyan" id="test-btn" onclick="runApiTest()">
+      ${USE_PROXY ? '🔌 接続テストを実行する' : 'ℹ️ 接続方法を確認する'}
     </button>
-    <!-- ★ テスト結果表示欄 -->
     <div id="test-result" style="margin-top:10px;font-size:13px;line-height:1.7;min-height:0"></div>
     <div class="gap8"></div>
-    <button class="btn red" onclick="clearKey()">🗑️ キーを削除する</button>
-
-    <!-- ★ Brave向け注意 -->
-    <div class="no-capture-banner" style="margin-top:12px">
-      <span class="no-capture-icon">🦁</span>
-      <span><b style="color:var(--c-gold-hi)">Braveブラウザをお使いの場合:</b><br>
-      アドレスバーの🦁アイコン →「シールドを下げる」で接続できる場合があります。<br>
-      うまくいかない場合は <b>Chrome / Firefox / Safari</b> をお試しください。</span>
-    </div>
+    <button class="btn green" onclick="${USE_PROXY ? 'goImport()' : 'setState({screen:S.MENU})'}">
+      ${USE_PROXY ? '➡️ STEP 2 画像選択へ進む' : '← メニューに戻る'}
+    </button>
 
     <div class="win" style="margin-top:16px">
       <div class="small">
-        <div style="color:var(--c-gold-hi);font-weight:700;margin-bottom:7px">📋 APIキー取得方法</div>
-        ① <a href="https://console.anthropic.com" target="_blank" style="color:var(--c-cyan)">console.anthropic.com</a> にアクセス<br>
-        ② 左メニュー「API Keys」→「Create Key」<br>
-        ③ 生成されたキーをコピーして上に貼り付け
+        <div style="color:var(--c-gold-hi);font-weight:700;margin-bottom:7px">📋 運用メモ</div>
+        ① 利用者には API キーを配布しません<br>
+        ② 開発時は <code style="background:rgba(0,0,0,.4);padding:2px 5px;border-radius:3px">ANTHROPIC_API_KEY=... node server.js</code><br>
+        ③ 公開時は <code style="background:rgba(0,0,0,.4);padding:2px 5px;border-radius:3px">bookshot-worker.js</code> をデプロイし、<code style="background:rgba(0,0,0,.4);padding:2px 5px;border-radius:3px">REMOTE_PROXY_URL</code> にURLを設定します
       </div>
     </div>
   </div>`;
@@ -886,16 +1081,37 @@ function tplImport() {
     <div class="screen-hd">
       <button class="back-btn" onclick="setState({screen:S.MENU})">← 戻る</button>
       <div class="screen-title" style="margin-top:12px">📸 画像を取り込む</div>
-      <div class="screen-sub">書籍が写った画面をキャプチャ or 選択</div>
+      <div class="screen-sub">${DEMO_MODE ? 'お試しモードで流れを確認できます' : 'STEP 2 / 3 書籍が写った画像を選びます'}</div>
     </div>
     <div class="divider"></div>
+
+    <div class="win" style="margin-top:12px">
+      <div class="step-guide-title">この画面でやること</div>
+      <div class="step-guide-body">
+        ${hasImg
+          ? '画像を確認して、問題なければ「この画像を解析する」を押してください。'
+          : 'まずスクリーンショット画像を1枚選んでください。選択後に解析ボタンが表示されます。'}
+      </div>
+      <div class="step-chip-row">
+        <span class="step-chip">STEP 1 接続確認</span>
+        <span class="step-chip active">STEP 2 画像選択</span>
+        <span class="step-chip">STEP 3 結果確認</span>
+      </div>
+    </div>
+
+    ${DEMO_MODE ? `
+    <div class="no-capture-banner" style="margin-top:12px">
+      <span class="no-capture-icon">✨</span>
+      <span>現在はお試しモードです。画像を選ぶと、サンプルの解析結果で操作感を確認できます。</span>
+    </div>
+    ` : ''}
 
     ${hasImg ? `
     <!-- ▼ 取り込み済みプレビュー -->
     <div class="img-zone" onclick="pickFile()">
       <img src="${state.imgDataUrl}" alt="取り込んだ画像">
     </div>
-    <button class="btn cyan" onclick="doAnalyze()">⚔️ AIで書籍解析スタート</button>
+    <button class="btn cyan" onclick="doAnalyze()">${DEMO_MODE ? '✨ この画像でお試し解析する' : '⚔️ STEP 3 この画像を解析する'}</button>
     <div class="gap8"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
       ${canCap && !isMobile
@@ -912,22 +1128,22 @@ function tplImport() {
       <!-- PC/Mac: スクリーンキャプチャ -->
       <div class="method-card cyan-card" onclick="startCapture()">
         <span class="method-card-icon">🖥️</span>
-        <span class="method-card-label">スクリーンショットを撮る</span>
-        <span class="method-card-sub">画面をその場でキャプチャ</span>
+        <span class="method-card-label">その場で画面を取り込む</span>
+        <span class="method-card-sub">このあと解析へ進みます</span>
       </div>
       ` : `
       <!-- iPhoneなど非対応端末: 代替カード -->
       <div class="method-card" style="opacity:.5;cursor:not-allowed">
         <span class="method-card-icon">🖥️</span>
-        <span class="method-card-label">スクリーンショットを撮る</span>
+        <span class="method-card-label">その場で画面を取り込む</span>
         <span class="method-card-sub">この端末では非対応</span>
       </div>
       `}
 
       <div class="method-card" onclick="pickFile()">
         <span class="method-card-icon">📁</span>
-        <span class="method-card-label">ライブラリから選ぶ</span>
-        <span class="method-card-sub">保存済みの画像を選択</span>
+        <span class="method-card-label">スクショ画像を選ぶ</span>
+        <span class="method-card-sub">選択後に解析ボタンが出ます</span>
       </div>
 
     </div>
@@ -1089,6 +1305,13 @@ function tplResults() {
       <div class="screen-sub">解析: ${ex.length}冊 ／ AI提案: ${rec.length}冊</div>
     </div>
     <div class="divider"></div>
+
+    ${r.isDemo ? `
+    <div class="no-capture-banner" style="margin-bottom:12px">
+      <span class="no-capture-icon">✨</span>
+      <span>これはお試し表示です。実際の公開版では、選んだ画像をAIで解析して結果を表示します。</span>
+    </div>
+    ` : ''}
 
     <!-- 抽出された書籍 -->
     ${ex.length ? `
@@ -1278,10 +1501,11 @@ function showErrOverlay(msg) {
   var el = document.createElement('div');
   el.id = 'err-overlay';
   el.className = 'err-overlay';
+  var title = IS_ADMIN_MODE ? 'エラーが発生しました' : 'ご案内';
   el.innerHTML = `
     <div class="win err-box anim-slide">
       <div class="err-icon">⚠️</div>
-      <div class="err-title">エラーが発生しました</div>
+      <div class="err-title">${title}</div>
       <div class="err-msg">${escH(msg)}</div>
       <button class="btn red" onclick="dismissErr()">閉じる</button>
     </div>`;
@@ -1330,18 +1554,16 @@ function startLoadingMessages() {
 ═══════════════════════════════════════════════════════ */
 function goMenu()       { setState({screen: S.MENU}); }
 function goHistory()    { setState({screen: S.HISTORY}); }
-function goApiSetup()   { setState({screen: S.API_SETUP}); }
+function goApiSetup()   {
+  if(!IS_ADMIN_MODE){ setState({screen: S.MENU}); return; }
+  setState({screen: S.API_SETUP});
+}
 function goImport()     {
   setState({screen: S.IMPORT, imgDataUrl:null, imgBase64:null});
 }
 function goPostSelect() { setState({screen: S.POST_SELECT, selectedBookNum: null}); }
 
 function startAnalysis() {
-  if(!state.apiKey){
-    state.error = 'APIキーが未設定です。\nメニューの「APIキー設定」からClaude APIキーを入力してください。';
-    setState({screen: S.API_SETUP});
-    return;
-  }
   goImport();
 }
 
@@ -1349,8 +1571,14 @@ function startAnalysis() {
    API 接続テスト（段階的診断）
 ═══════════════════════════════════════════════════════ */
 async function runApiTest() {
-  var key = state.apiKey;
-  if(!key){ showErr('先にAPIキーを入力して保存してください。'); return; }
+  if(!IS_ADMIN_MODE){
+    showErr('この画面は管理者向けです。通常は設定なしで画像選択へ進んでください。');
+    return;
+  }
+  if(!USE_PROXY){
+    showErr('解析サービスURLが未設定です。\n\n次のどちらかを行ってください。\n1. 公開用の `REMOTE_PROXY_URL` を設定する\n2. ローカルで `ANTHROPIC_API_KEY=... node server.js` を実行し、http://localhost:3000 で開く');
+    return;
+  }
 
   var btn = document.getElementById('test-btn');
   var box = document.getElementById('test-result');
@@ -1359,87 +1587,57 @@ async function runApiTest() {
   function log(html){ if(box) box.innerHTML += html + '<br>'; }
   if(box) box.innerHTML = '';
 
-  // ── STEP 1: ネットワーク到達確認（no-cors で Preflight なし）
-  log('<span style="color:var(--c-silver)">① api.anthropic.com への到達確認...</span>');
+  // ── STEP 1: BookShot バックエンドへの到達確認
+  log('<span style="color:var(--c-silver)">① BookShot 解析サービスへの到達確認...</span>');
   try {
-    await fetch('https://api.anthropic.com', { method: 'HEAD', mode: 'no-cors' });
-    log('<span style="color:var(--c-green)">✓ サーバーに到達できます</span>');
+    var healthRes = await fetch(getApiUrl('/health'), { method: 'GET' });
+    var healthJson = {};
+    try { healthJson = await healthRes.json(); } catch(_){}
+    if(!healthRes.ok) throw new Error((healthJson.error && healthJson.error.message) || ('HTTP ' + healthRes.status));
+    log('<span style="color:var(--c-green)">✓ 解析サービスに到達できます</span>');
   } catch(e) {
-    log('<span style="color:var(--c-red)">✗ サーバーに到達できません（ネットワーク/ファイアウォール）</span>');
-    log('<span style="color:var(--c-silver);font-size:11px">→ VPN・企業ネットワークを外してお試しください</span>');
+    log('<span style="color:var(--c-red)">✗ 解析サービスに到達できません</span>');
+    log('<span style="color:var(--c-silver);font-size:11px">→ URL / CORS / デプロイ状態を確認してください</span>');
     if(btn){ btn.disabled = false; btn.textContent = '🔌 接続テスト（疎通確認）'; }
     return;
   }
 
-  // ── STEP 2: CORS + API key テスト（軽量テキストリクエスト）
-  log('<span style="color:var(--c-silver)">② APIキーと CORS の確認...</span>');
+  // ── STEP 2: サーバー側 Claude 疎通確認
+  var modeLabel = LOCAL_PROXY_MODE ? '(ローカル)' : '(公開用)';
+  log('<span style="color:var(--c-silver)">② Claude 疎通確認 ' + modeLabel + '...</span>');
   try {
-    var res = await fetch('https://api.anthropic.com/v1/messages', {
-      method:      'POST',
-      mode:        'cors',
-      credentials: 'omit',
-      headers: {
-        'Content-Type':                             'application/json',
-        'x-api-key':                                key,
-        'anthropic-version':                        '2023-06-01',
-        'anthropic-dangerous-direct-browser-calls': 'true'
-      },
-      body: JSON.stringify({
-        model:      'claude-haiku-4-5-20251001',  // 軽量モデルでテスト
-        max_tokens: 5,
-        messages: [{ role: 'user', content: 'hi' }]
-      })
+    var res = await fetch(getApiUrl('/api/test'), {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
     });
 
     if(res.ok) {
-      log('<span style="color:var(--c-green)">✓ APIキー有効・CORS OK</span>');
+      log('<span style="color:var(--c-green)">✓ サーバー側の Claude 接続も正常です</span>');
       log('<span style="color:var(--c-green)">✓ 接続テスト成功！解析を始められます 🎉</span>');
       toast('✓ 接続テスト成功！');
     } else {
       var ej = {}; try{ ej = await res.json(); }catch(_){}
       var em = (ej.error && ej.error.message) || ('HTTP ' + res.status);
-      if(res.status === 401){
-        log('<span style="color:var(--c-red)">✗ APIキーが無効(401) → キーを再確認してください</span>');
-      } else if(res.status === 403){
-        log('<span style="color:var(--c-red)">✗ アクセス拒否(403) → プランやキーの権限を確認</span>');
+      if(res.status === 503){
+        log('<span style="color:var(--c-red)">✗ サーバー側の API キー設定が未完了です</span>');
+      } else if(res.status === 401 || res.status === 403){
+        log('<span style="color:var(--c-red)">✗ サーバー側の認証に失敗しました</span>');
       } else {
         log('<span style="color:var(--c-red)">✗ APIエラー(' + res.status + '): ' + escH(em) + '</span>');
       }
     }
   } catch(e) {
-    if(e.message.includes('fetch') || e.name === 'TypeError') {
-      log('<span style="color:var(--c-red)">✗ CORS ブロック検出（Failed to fetch）</span>');
-      log('<span style="color:var(--c-gold)">→ 【Brave】アドレスバーの🦁→「シールドを下げる」</span>');
-      log('<span style="color:var(--c-gold)">→ または Chrome / Firefox / Safari をお使いください</span>');
-    } else {
-      log('<span style="color:var(--c-red)">✗ 不明なエラー: ' + escH(e.message) + '</span>');
-    }
+    log('<span style="color:var(--c-red)">✗ 接続失敗: ' + escH(e.message) + '</span>');
   }
 
   if(btn){ btn.disabled = false; btn.textContent = '🔌 接続テスト（疎通確認）'; }
 }
 
 /* ═══════════════════════════════════════════════════════
-   API KEY
+   SERVICE HELPERS
 ═══════════════════════════════════════════════════════ */
-function saveKey() {
-  var val = (document.getElementById('key-inp').value || '').trim();
-  if(!val){ showErr('APIキーを入力してください。'); return; }
-  if(!val.startsWith('sk-ant-')){
-    showErr('有効なAPIキー形式ではありません。\n"sk-ant-" で始まるキーを入力してください。');
-    return;
-  }
-  sessionStorage.setItem('bs_key', val);
-  state.apiKey = val;
-  toast('✓ APIキーを保存しました');
-  setTimeout(() => setState({screen: S.MENU}), 900);
-}
-
-function clearKey() {
-  sessionStorage.removeItem('bs_key');
-  state.apiKey = '';
-  setState({screen: S.MENU});
-}
+// APIキーはフロントに保持しない。必要な設定はバックエンド側で行う。
 
 /* ═══════════════════════════════════════════════════════
    FILE HANDLING — 常設inputを使ってbody破壊に強くする
@@ -1487,7 +1685,9 @@ async function doAnalyze() {
   setState({screen: S.ANALYZING});
 
   try {
-    var result = await callClaude(state.imgBase64, state.imgMediaType, state.apiKey);
+    var result = DEMO_MODE
+      ? await callClaudeDemo(state.imgBase64, state.imgMediaType)
+      : await callClaude(state.imgBase64, state.imgMediaType);
 
     // 採番
     var num = 1;
@@ -1501,7 +1701,7 @@ async function doAnalyze() {
     state.history.push(histItem);
     try { localStorage.setItem('bs_hist', JSON.stringify(state.history.slice(-30))); } catch(_){}
 
-    setState({ screen: S.RESULTS, analysisResult: result });
+    setState({ screen: S.RESULTS, analysisResult: result, analysisMeta: { isDemo: !!result.isDemo } });
 
   } catch(err) {
     setState({ screen: S.IMPORT });
@@ -1509,7 +1709,63 @@ async function doAnalyze() {
   }
 }
 
-async function callClaude(b64, mediaType, apiKey) {
+async function callClaudeDemo() {
+  await new Promise(function(resolve){ setTimeout(resolve, 1300); });
+  return {
+    isDemo: true,
+    extractedBooks: [
+      {
+        title: '嫌われる勇気',
+        author: '岸見一郎 / 古賀史健',
+        recommendationPoints: [
+          '対人関係の悩みを別の視点から見直せます',
+          '短時間でも読み進めやすい対話形式です',
+          '考え方を整理したい人に向いています'
+        ]
+      },
+      {
+        title: 'LIFE SHIFT',
+        author: 'リンダ・グラットン / アンドリュー・スコット',
+        recommendationPoints: [
+          '長い人生設計を考えるきっかけになります',
+          '仕事と学びの関係を見直せます',
+          '将来への不安を整理しやすい内容です'
+        ]
+      }
+    ],
+    recommendedBooks: [
+      {
+        title: 'エッセンシャル思考',
+        author: 'グレッグ・マキューン',
+        recommendationPoints: [
+          'やることを絞る発想と相性が良いです',
+          '日々の判断を軽くしたい人に向いています',
+          'ビジネスでも私生活でも応用しやすいです'
+        ]
+      },
+      {
+        title: '7つの習慣',
+        author: 'スティーブン・R・コヴィー',
+        recommendationPoints: [
+          '行動習慣まで落とし込んで考えられます',
+          '長く読み継がれている定番書です',
+          '自己理解を深めたい人に合います'
+        ]
+      },
+      {
+        title: 'Think clearly',
+        author: 'ロルフ・ドベリ',
+        recommendationPoints: [
+          '日常の思考のクセに気づきやすくなります',
+          '短い項目で読みやすい構成です',
+          '判断ミスを減らしたい人におすすめです'
+        ]
+      }
+    ]
+  };
+}
+
+async function callClaude(b64, mediaType) {
   var prompt = `この画像に写っている書籍をすべて解析し、以下のJSON形式のみで回答してください（説明文やコードブロックは不要）：
 
 {
@@ -1535,55 +1791,38 @@ async function callClaude(b64, mediaType, apiKey) {
 - recommendationPoints は各3件、日本語で具体的かつ魅力的に
 - JSONのみ返答。前置き・後書き・コードブロック不要`;
 
-  // ── fetch (CORS明示 + credentials除外)
+  if(!USE_PROXY){
+    throw new Error('解析サービスが未設定です。`REMOTE_PROXY_URL` を設定するか、ローカルで `ANTHROPIC_API_KEY=... node server.js` を実行してください。');
+  }
+
   var res;
   try {
-    res = await fetch('https://api.anthropic.com/v1/messages', {
-      method:      'POST',
-      mode:        'cors',        // CORS明示
-      credentials: 'omit',       // cookie送信しない（CORS対策）
-      headers: {
-        'Content-Type':                             'application/json',
-        'x-api-key':                                apiKey,
-        'anthropic-version':                        '2023-06-01',
-        'anthropic-dangerous-direct-browser-calls': 'true'
-      },
+    res = await fetch(getApiUrl('/api/analyze'), {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model:      'claude-opus-4-6',   // ★ 修正: 存在するモデル名に変更
-        max_tokens: 4096,
-        messages: [{
-          role: 'user',
-          content: [
-            {
-              type:   'image',
-              source: { type: 'base64', media_type: mediaType, data: b64 }
-            },
-            { type: 'text', text: prompt }
-          ]
-        }]
+        imageBase64: b64,
+        mediaType:   mediaType,
+        prompt:      prompt
       })
     });
   } catch(netErr) {
-    // ネットワーク層のエラー（CORS preflightブロックなど）
-    throw new Error(
-      'ネットワークエラー: ' + netErr.message + '\n\n' +
-      '【原因の可能性】\n' +
-      '① Braveブラウザのシールド → アドレスバーの🦁をクリックし「シールドを下げる」\n' +
-      '② CORS制限 → Chrome / Firefox / Safari で試してください\n' +
-      '③ ファイアウォール / VPN → ネットワーク設定を確認\n\n' +
-      '【即時確認】APIキー設定画面の「接続テスト」ボタンで診断できます'
-    );
+    var proxyHint = LOCAL_PROXY_MODE
+      ? 'server.js が起動しているか確認してください（ANTHROPIC_API_KEY=... node server.js）'
+      : '公開用 Worker の URL / CORS / シークレット設定を確認してください。';
+    throw new Error('ネットワークエラー: ' + netErr.message + '\n\n' + proxyHint);
   }
 
   if(!res.ok) {
     var errJson = {};
     try { errJson = await res.json(); } catch(_){}
     var msg = (errJson.error && errJson.error.message) || ('HTTP ' + res.status);
-    if(res.status === 401) throw new Error('APIキーが無効です。キーを再確認してください。');
-    if(res.status === 403) throw new Error('APIアクセス拒否(403)。キーの権限を確認してください。');
+    if(res.status === 401) throw new Error('サーバー側の API 認証に失敗しました。管理者設定を確認してください。');
+    if(res.status === 403) throw new Error('APIアクセス拒否(403)。サーバー側の権限設定を確認してください。');
     if(res.status === 404) throw new Error('モデルが見つかりません(404)。APIプランを確認してください。');
     if(res.status === 429) throw new Error('APIの利用制限に達しました(429)。しばらく待ってから再試行してください。');
     if(res.status === 500) throw new Error('Anthropicサーバーエラー(500)。時間をおいて再試行してください。');
+    if(res.status === 503) throw new Error('解析サービスの API キー設定が完了していません。');
     throw new Error('API通信エラー(' + res.status + '): ' + msg);
   }
 
