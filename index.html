@@ -1,0 +1,1742 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#050510">
+  <title>BookShot ✦ 書籍解析システム</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    /* ═══════════════════════════════════════════
+       DESIGN TOKENS
+    ═══════════════════════════════════════════ */
+    :root {
+      --c-bg:        #050510;
+      --c-navy:      #0a0a28;
+      --c-panel:     #0c0c30;
+      --c-panel2:    #10103a;
+      --c-gold:      #c8a000;
+      --c-gold-hi:   #ffd700;
+      --c-silver:    #a0a0c0;
+      --c-white:     #e0e0f0;
+      --c-cyan:      #00ccff;
+      --c-blue:      #4080ff;
+      --c-purple:    #8040ff;
+      --c-green:     #40c060;
+      --c-red:       #ff4050;
+      --c-dim:       #404068;
+      --safe-t: env(safe-area-inset-top, 0px);
+      --safe-b: env(safe-area-inset-bottom, 0px);
+      --win-border:  2px solid var(--c-gold);
+    }
+
+    /* ═══════════════════════════════════════════
+       RESET & BASE
+    ═══════════════════════════════════════════ */
+    *, *::before, *::after {
+      margin: 0; padding: 0; box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: var(--c-bg);
+    }
+    body {
+      font-family: 'Noto Serif JP', 'Hiragino Mincho ProN', 'Yu Mincho', serif;
+      color: var(--c-white);
+      position: fixed; inset: 0;
+    }
+    button { font-family: inherit; }
+
+    /* ═══════════════════════════════════════════
+       STARFIELD
+    ═══════════════════════════════════════════ */
+    #starfield {
+      position: fixed; inset: 0; z-index: 0;
+      pointer-events: none; overflow: hidden;
+    }
+    .star {
+      position: absolute; border-radius: 50%;
+      background: white;
+      animation: twinkle var(--d, 3s) ease-in-out var(--dl, 0s) infinite;
+    }
+    @keyframes twinkle {
+      0%,100% { opacity: var(--lo,.1); transform: scale(1); }
+      50%      { opacity: var(--hi,.9); transform: scale(1.6); }
+    }
+
+    /* ═══════════════════════════════════════════
+       MAIN SCROLL CONTAINER
+    ═══════════════════════════════════════════ */
+    #app {
+      position: relative; z-index: 1;
+      width: 100%; height: 100%;
+      overflow-y: auto; overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      scroll-behavior: smooth;
+      padding-top: var(--safe-t);
+      padding-bottom: calc(var(--safe-b) + 64px);
+    }
+    #app::-webkit-scrollbar { display: none; }
+
+    /* ═══════════════════════════════════════════
+       FF WINDOW
+    ═══════════════════════════════════════════ */
+    .win {
+      background: linear-gradient(150deg, #0e0e38 0%, #080820 100%);
+      border: var(--win-border);
+      border-radius: 3px;
+      padding: 16px;
+      position: relative;
+      box-shadow:
+        0 0 0 1px rgba(200,160,0,.25),
+        inset 0 1px 0 rgba(255,215,0,.07),
+        0 8px 40px rgba(0,0,0,.8);
+    }
+    /* corner gems */
+    .win::before {
+      content: '◆';
+      position: absolute; top: -9px; left: 6px;
+      color: var(--c-gold); font-size: 13px;
+      background: var(--c-bg); padding: 0 2px; line-height: 1;
+    }
+    .win::after {
+      content: '◆';
+      position: absolute; bottom: -9px; right: 6px;
+      color: var(--c-gold); font-size: 13px;
+      background: var(--c-bg); padding: 0 2px; line-height: 1;
+    }
+
+    /* ═══════════════════════════════════════════
+       FF BUTTONS — with tactile press effect
+    ═══════════════════════════════════════════ */
+    .btn {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      width: 100%; min-height: 52px;
+      padding: 13px 20px;
+      background: linear-gradient(180deg, #16165a 0%, #0a0a28 100%);
+      border: 2px solid var(--c-gold);
+      border-radius: 3px;
+      color: var(--c-gold-hi);
+      font-size: 16px; font-weight: 700; font-family: inherit;
+      letter-spacing: .06em;
+      cursor: pointer;
+      position: relative; overflow: hidden;
+      transition: transform .07s ease, background .07s ease, box-shadow .07s ease;
+      -webkit-user-select: none; user-select: none;
+    }
+    .btn::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: linear-gradient(180deg, rgba(255,215,0,.18) 0%, transparent 55%);
+      opacity: 0; transition: opacity .15s;
+    }
+    .btn:hover::after { opacity: 1; }
+    .btn:active {
+      transform: scale(.96) translateY(2px);
+      background: linear-gradient(180deg, #28287a 0%, #16165a 100%);
+      box-shadow: 0 0 18px rgba(255,215,0,.45), inset 0 2px 5px rgba(0,0,0,.6);
+    }
+    .btn.cyan {
+      background: linear-gradient(180deg, #12305a 0%, #091828 100%);
+      border-color: var(--c-cyan); color: var(--c-cyan);
+    }
+    .btn.cyan:active { box-shadow: 0 0 18px rgba(0,204,255,.45); }
+    .btn.green {
+      background: linear-gradient(180deg, #0e3020 0%, #071810 100%);
+      border-color: var(--c-green); color: var(--c-green);
+    }
+    .btn.green:active { box-shadow: 0 0 18px rgba(64,192,96,.45); }
+    .btn.red {
+      background: linear-gradient(180deg, #3a1020 0%, #200810 100%);
+      border-color: var(--c-red); color: var(--c-red);
+    }
+    .btn.red:active { box-shadow: 0 0 18px rgba(255,64,80,.45); }
+    .btn.ghost {
+      background: transparent;
+      border-color: var(--c-gold); color: var(--c-gold);
+      min-height: 40px; font-size: 14px; padding: 8px 16px;
+    }
+    .btn:disabled {
+      opacity: .35; cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    /* ═══════════════════════════════════════════
+       FF INPUT
+    ═══════════════════════════════════════════ */
+    .ff-input {
+      width: 100%; padding: 13px 14px;
+      background: rgba(0,0,0,.55);
+      border: 2px solid var(--c-gold);
+      border-radius: 3px;
+      color: var(--c-white);
+      font-family: monospace; font-size: 14px;
+      outline: none;
+      transition: border-color .2s, box-shadow .2s;
+      -webkit-appearance: none;
+    }
+    .ff-input:focus {
+      border-color: var(--c-cyan);
+      box-shadow: 0 0 12px rgba(0,204,255,.3);
+    }
+
+    /* ═══════════════════════════════════════════
+       DIVIDER
+    ═══════════════════════════════════════════ */
+    .divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--c-gold), transparent);
+      margin: 14px 0;
+    }
+
+    /* ═══════════════════════════════════════════
+       SCREEN WRAPPER
+    ═══════════════════════════════════════════ */
+    .screen {
+      max-width: 480px; margin: 0 auto; padding: 14px 16px;
+    }
+    .screen-hd { text-align: center; padding: 18px 0 14px; }
+    .screen-title {
+      font-size: 20px; font-weight: 700;
+      color: var(--c-gold-hi); letter-spacing: .12em;
+      text-shadow: 0 0 12px rgba(255,215,0,.4);
+    }
+    .screen-sub { font-size: 12px; color: var(--c-silver); letter-spacing: .08em; margin-top: 4px; }
+
+    /* ═══════════════════════════════════════════
+       BACK BUTTON
+    ═══════════════════════════════════════════ */
+    .back-btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 7px 13px;
+      background: transparent;
+      border: 1px solid var(--c-dim); border-radius: 3px;
+      color: var(--c-silver); font-size: 13px; font-family: inherit;
+      cursor: pointer; letter-spacing: .05em;
+      transition: border-color .12s, color .12s, transform .07s;
+    }
+    .back-btn:active {
+      border-color: var(--c-gold); color: var(--c-gold);
+      transform: scale(.95);
+    }
+
+    /* ═══════════════════════════════════════════
+       STATUS BAR (bottom)
+    ═══════════════════════════════════════════ */
+    #status-bar {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+      background: linear-gradient(180deg, #0a0a28 0%, #050510 100%);
+      border-top: 2px solid var(--c-gold);
+      padding: 9px 16px calc(9px + var(--safe-b));
+      min-height: 50px;
+      display: flex; align-items: center;
+    }
+    .status-txt {
+      font-size: 12px; color: var(--c-silver); letter-spacing: .06em;
+    }
+    .blink-cursor {
+      display: inline-block;
+      animation: blink .8s step-end infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    /* ═══════════════════════════════════════════
+       ANIMATIONS
+    ═══════════════════════════════════════════ */
+    @keyframes slideUp {
+      from { transform: translateY(24px); opacity: 0; }
+      to   { transform: translateY(0);    opacity: 1; }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; } to { opacity: 1; }
+    }
+    @keyframes shimmer {
+      0%,100% { text-shadow: 0 0 12px rgba(255,215,0,.4); opacity: .85; }
+      50%      { text-shadow: 0 0 30px rgba(255,215,0,.9), 0 0 50px rgba(255,215,0,.5); opacity: 1; }
+    }
+    @keyframes crystalSpin {
+      0%   { transform: rotate(0deg)   scale(1);   filter: drop-shadow(0 0 12px rgba(0,204,255,.7)); }
+      25%  { transform: rotate(90deg)  scale(1.1); filter: drop-shadow(0 0 20px rgba(0,204,255,1)); }
+      50%  { transform: rotate(180deg) scale(1);   filter: drop-shadow(0 0 12px rgba(128,64,255,.8)); }
+      75%  { transform: rotate(270deg) scale(1.1); filter: drop-shadow(0 0 20px rgba(128,64,255,1)); }
+      100% { transform: rotate(360deg) scale(1);   filter: drop-shadow(0 0 12px rgba(0,204,255,.7)); }
+    }
+    @keyframes pulse {
+      0%,100% { transform: scale(1); }
+      50%      { transform: scale(1.08); }
+    }
+    @keyframes barGlow {
+      0%   { width: 5%;  }
+      40%  { width: 70%; }
+      80%  { width: 90%; }
+      100% { width: 92%; }
+    }
+    .anim-slide { animation: slideUp .28s ease both; }
+    .anim-fade  { animation: fadeIn .35s ease both; }
+
+    /* ═══════════════════════════════════════════
+       TITLE SCREEN
+    ═══════════════════════════════════════════ */
+    .title-screen {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; min-height: 100vh;
+      padding: 24px; text-align: center;
+    }
+    .title-crystal {
+      font-size: 60px; margin-bottom: 20px;
+      animation: crystalSpin 4s linear infinite;
+    }
+    .title-badge {
+      font-size: 11px; letter-spacing: .25em; color: var(--c-gold);
+      text-transform: uppercase; margin-bottom: 8px;
+      animation: shimmer 3s ease-in-out infinite;
+    }
+    .title-main {
+      font-size: 38px; font-weight: 700; letter-spacing: .1em;
+      color: var(--c-gold-hi);
+      text-shadow: 0 0 20px rgba(255,215,0,.55);
+      margin-bottom: 6px;
+    }
+    .title-sub-line {
+      font-size: 12px; color: var(--c-silver); letter-spacing: .14em;
+      margin-bottom: 44px;
+    }
+    .press-start {
+      font-size: 14px; color: var(--c-gold); letter-spacing: .2em;
+      margin-top: 20px;
+      animation: blink 1.3s ease-in-out infinite;
+    }
+
+    /* ═══════════════════════════════════════════
+       MENU ITEMS
+    ═══════════════════════════════════════════ */
+    .menu-list { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+    .menu-item {
+      display: flex; align-items: center; gap: 13px;
+      padding: 15px 14px;
+      background: linear-gradient(160deg, #0e0e38 0%, #080820 100%);
+      border: 2px solid var(--c-gold); border-radius: 3px;
+      cursor: pointer; min-height: 64px;
+      transition: transform .07s, background .07s, box-shadow .07s;
+      -webkit-user-select: none; user-select: none;
+    }
+    .menu-item:active {
+      transform: scale(.97) translateY(1px);
+      background: linear-gradient(160deg, #1c1c55 0%, #0e0e38 100%);
+      box-shadow: 0 0 16px rgba(255,215,0,.28);
+    }
+    .menu-icon { font-size: 26px; width: 36px; text-align: center; flex-shrink: 0; }
+    .menu-body  { flex: 1; }
+    .menu-label { font-size: 16px; font-weight: 700; color: var(--c-gold-hi); }
+    .menu-desc  { font-size: 12px; color: var(--c-silver); margin-top: 2px; }
+    .menu-arr   { color: var(--c-gold); font-size: 18px; }
+
+    /* ═══════════════════════════════════════════
+       API STATUS BADGE
+    ═══════════════════════════════════════════ */
+    .api-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 10px; border-radius: 12px; font-size: 12px;
+    }
+    .api-badge.ok { background: rgba(64,192,96,.15); border: 1px solid var(--c-green); color: var(--c-green); }
+    .api-badge.ng { background: rgba(255,64,80,.15); border: 1px solid var(--c-red);   color: var(--c-red); }
+
+    /* ═══════════════════════════════════════════
+       IMAGE PREVIEW / UPLOAD ZONE
+    ═══════════════════════════════════════════ */
+    .img-zone {
+      border: 2px solid var(--c-gold); border-radius: 3px;
+      background: rgba(0,0,0,.5); overflow: hidden;
+      min-height: 160px; display: flex; align-items: center; justify-content: center;
+      cursor: pointer; margin: 12px 0;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .img-zone:active { border-color: var(--c-cyan); box-shadow: 0 0 14px rgba(0,204,255,.3); }
+    .img-zone img  { max-width: 100%; max-height: 260px; object-fit: contain; }
+    .upload-hint   { text-align: center; padding: 28px 16px; }
+    .upload-icon   { font-size: 52px; display: block; margin-bottom: 12px; animation: pulse 2.5s ease-in-out infinite; }
+    .upload-txt    { font-size: 14px; color: var(--c-silver); line-height: 1.7; }
+
+    /* ═══════════════════════════════════════════
+       LOADING SCREEN
+    ═══════════════════════════════════════════ */
+    .loading-screen {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; min-height: 85vh; padding: 24px; text-align: center;
+    }
+    .loading-crystal { font-size: 68px; margin-bottom: 24px; animation: crystalSpin 2s linear infinite; }
+    .loading-title   { font-size: 17px; color: var(--c-gold-hi); letter-spacing: .16em; margin-bottom: 18px; }
+    .bar-wrap {
+      width: 200px; height: 14px; border: 2px solid var(--c-gold); border-radius: 7px;
+      background: rgba(0,0,0,.5); overflow: hidden; margin-bottom: 14px;
+    }
+    .bar-fill {
+      height: 100%; border-radius: 5px;
+      background: linear-gradient(90deg, var(--c-cyan), var(--c-gold-hi), var(--c-purple));
+      animation: barGlow 4s ease-in-out both;
+    }
+    .loading-msg { font-size: 13px; color: var(--c-silver); letter-spacing: .08em; }
+
+    /* ═══════════════════════════════════════════
+       BOOK CARDS
+    ═══════════════════════════════════════════ */
+    .sec-hd {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 12px; border: 2px solid var(--c-gold); border-radius: 3px;
+      background: linear-gradient(180deg, #18105a 0%, #0c0830 100%);
+      margin-bottom: 10px;
+    }
+    .sec-hd-icon { font-size: 20px; }
+    .sec-hd-txt  { font-size: 14px; font-weight: 700; color: var(--c-gold-hi); letter-spacing: .05em; }
+    .sec-hd-cnt  { margin-left: auto; font-size: 12px; color: var(--c-silver); }
+
+    .book-card {
+      margin-bottom: 10px; border: 2px solid var(--c-gold); border-radius: 3px;
+      background: linear-gradient(155deg, #0e0e38 0%, #070720 100%); overflow: hidden;
+    }
+    .book-head {
+      display: flex; align-items: center; padding: 12px;
+      background: linear-gradient(180deg, rgba(200,160,0,.14) 0%, transparent 100%);
+      border-bottom: 1px solid rgba(200,160,0,.25); gap: 11px;
+    }
+    .book-num {
+      width: 38px; height: 38px; flex-shrink: 0;
+      border: 2px solid var(--c-gold); border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 17px; font-weight: 700; color: var(--c-gold-hi);
+    }
+    .book-info { flex: 1; min-width: 0; }
+    .book-title {
+      font-size: 15px; font-weight: 700; color: var(--c-white);
+      line-height: 1.35; word-break: break-all;
+    }
+    .book-author { font-size: 12px; color: var(--c-silver); margin-top: 2px; }
+    .book-badge {
+      font-size: 10px; padding: 3px 8px; border-radius: 10px; font-weight: 700;
+      letter-spacing: .04em; flex-shrink: 0;
+    }
+    .badge-ex  { background: rgba(0,204,255,.15); border:1px solid var(--c-cyan);   color: var(--c-cyan); }
+    .badge-rec { background: rgba(128,64,255,.15); border:1px solid var(--c-purple); color: var(--c-purple); }
+    .book-pts  { padding: 10px 12px; }
+    .book-pt {
+      display: flex; gap: 8px; padding: 3px 0;
+      font-size: 13px; color: var(--c-silver); line-height: 1.55;
+    }
+    .pt-star { color: var(--c-gold); flex-shrink: 0; }
+
+    /* ═══════════════════════════════════════════
+       SNS BOOK SELECT GRID
+    ═══════════════════════════════════════════ */
+    .pick-grid {
+      display: grid; grid-template-columns: repeat(4,1fr); gap: 9px; margin: 12px 0;
+    }
+    .pick-btn {
+      aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+      font-size: 20px; font-weight: 700;
+      border: 2px solid var(--c-gold); border-radius: 3px;
+      background: linear-gradient(180deg, #0e0e38 0%, #080820 100%);
+      color: var(--c-gold-hi); cursor: pointer;
+      transition: transform .07s, box-shadow .07s, background .07s;
+      -webkit-user-select: none; user-select: none;
+    }
+    .pick-btn:active {
+      transform: scale(.88);
+      box-shadow: 0 0 14px rgba(255,215,0,.5);
+    }
+    .pick-btn.sel {
+      background: linear-gradient(180deg, #12305a 0%, #091828 100%);
+      border-color: var(--c-cyan); color: var(--c-cyan);
+      box-shadow: 0 0 10px rgba(0,204,255,.35);
+    }
+
+    /* ═══════════════════════════════════════════
+       SNS POST PREVIEW
+    ═══════════════════════════════════════════ */
+    .post-box {
+      border: 2px solid var(--c-gold); border-radius: 3px;
+      background: rgba(0,0,0,.55); padding: 16px;
+      font-size: 14px; line-height: 1.9; color: var(--c-white);
+      white-space: pre-wrap; word-break: break-all; min-height: 160px;
+    }
+
+    /* ═══════════════════════════════════════════
+       HISTORY CARDS
+    ═══════════════════════════════════════════ */
+    .hist-card {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px; margin-bottom: 10px;
+      border: 2px solid var(--c-gold); border-radius: 3px;
+      background: linear-gradient(155deg, #0e0e38 0%, #080820 100%);
+      cursor: pointer;
+      transition: transform .07s, background .07s;
+    }
+    .hist-card:active {
+      transform: scale(.97);
+      background: linear-gradient(155deg, #1c1c55 0%, #0e0e38 100%);
+    }
+    .hist-thumb {
+      width: 64px; height: 64px; flex-shrink: 0;
+      border: 1px solid var(--c-gold); border-radius: 2px;
+      background: var(--c-navy); object-fit: cover;
+    }
+    .hist-no-thumb {
+      width: 64px; height: 64px; flex-shrink: 0;
+      border: 1px solid var(--c-gold); border-radius: 2px;
+      background: var(--c-navy);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 28px;
+    }
+    .hist-info { flex: 1; min-width: 0; }
+    .hist-date { font-size: 11px; color: var(--c-silver); }
+    .hist-count { font-size: 15px; font-weight: 700; color: var(--c-gold-hi); margin-top: 3px; }
+    .hist-titles { font-size: 11px; color: var(--c-dim); margin-top: 3px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+    /* ═══════════════════════════════════════════
+       ERROR OVERLAY
+    ═══════════════════════════════════════════ */
+    .err-overlay {
+      position: fixed; inset: 0; z-index: 300;
+      background: rgba(0,0,0,.82);
+      display: flex; align-items: center; justify-content: center; padding: 24px;
+    }
+    .err-box { width: 100%; max-width: 320px; }
+    .err-icon  { text-align: center; font-size: 52px; margin-bottom: 14px; }
+    .err-title { text-align: center; font-size: 18px; font-weight: 700; color: var(--c-red); margin-bottom: 10px; }
+    .err-msg   { font-size: 13px; color: var(--c-silver); text-align: center; line-height: 1.75; margin-bottom: 20px; }
+
+    /* ═══════════════════════════════════════════
+       COPY TOAST
+    ═══════════════════════════════════════════ */
+    .toast {
+      position: fixed; top: 50%; left: 50%;
+      transform: translate(-50%, -50%) scale(.85);
+      background: rgba(0,204,255,.92); color: #000; font-weight: 700;
+      padding: 13px 28px; border-radius: 30px; font-size: 16px;
+      z-index: 400; pointer-events: none;
+      animation: toastAnim 1.8s ease forwards;
+    }
+    @keyframes toastAnim {
+      0%  { opacity: 0; transform: translate(-50%,-50%) scale(.8); }
+      15% { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+      75% { opacity: 1; }
+      100%{ opacity: 0; transform: translate(-50%,-60%) scale(.95); }
+    }
+
+    /* ═══════════════════════════════════════════
+       UTILITY CLASSES
+    ═══════════════════════════════════════════ */
+    .gap8  { height: 8px;  }
+    .gap12 { height: 12px; }
+    .gap16 { height: 16px; }
+    .center { text-align: center; }
+    .small  { font-size: 12px; color: var(--c-silver); line-height: 1.75; }
+    .label  { font-size: 13px; color: var(--c-silver); margin-bottom: 7px; letter-spacing: .04em; }
+    .hint   { font-size: 11px; color: var(--c-gold); margin-top: 6px; opacity: .8; }
+
+    /* ═══════════════════════════════════════════
+       CAPTURE SCREEN — ライブプレビュー
+    ═══════════════════════════════════════════ */
+    .capture-screen {
+      display: flex; flex-direction: column; align-items: center;
+      min-height: 100vh; padding: 14px 16px;
+      max-width: 480px; margin: 0 auto;
+    }
+    /* ライブビデオプレビュー枠 */
+    .capture-preview {
+      width: 100%; border: 2px solid var(--c-cyan);
+      border-radius: 3px; overflow: hidden; background: #000;
+      position: relative; margin: 12px 0;
+      box-shadow: 0 0 20px rgba(0,204,255,.35), inset 0 0 0 1px rgba(0,204,255,.15);
+      min-height: 200px;
+    }
+    .capture-preview video {
+      width: 100%; display: block; max-height: 55vh; object-fit: contain;
+    }
+    /* REC インジケーター */
+    .rec-badge {
+      position: absolute; top: 10px; right: 10px; z-index: 10;
+      display: flex; align-items: center; gap: 6px;
+      padding: 4px 10px; border-radius: 12px;
+      background: rgba(255,64,80,.85); font-size: 12px; font-weight: 700;
+      color: #fff; letter-spacing: .06em;
+    }
+    .rec-dot {
+      width: 8px; height: 8px; border-radius: 50%; background: #fff;
+      animation: blink .7s step-end infinite;
+    }
+    /* キャプチャボタン — 大きく目立たせる */
+    .capture-shutter {
+      width: 80px; height: 80px; border-radius: 50%;
+      border: 4px solid var(--c-cyan);
+      background: radial-gradient(circle at 40% 35%, #1a6090, #091828);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 32px; cursor: pointer; margin: 12px auto;
+      box-shadow: 0 0 24px rgba(0,204,255,.5), inset 0 2px 6px rgba(255,255,255,.1);
+      transition: transform .08s, box-shadow .08s;
+      -webkit-user-select: none; user-select: none;
+    }
+    .capture-shutter:active {
+      transform: scale(.88);
+      box-shadow: 0 0 40px rgba(0,204,255,.9), inset 0 2px 8px rgba(0,0,0,.5);
+    }
+    /* 取り込めない端末向けバナー */
+    .no-capture-banner {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 13px 14px; border: 1px solid var(--c-gold); border-radius: 3px;
+      background: rgba(200,160,0,.08); margin: 8px 0;
+      font-size: 12px; color: var(--c-silver); line-height: 1.65;
+    }
+    .no-capture-icon { font-size: 20px; flex-shrink: 0; }
+
+    /* ═══════════════════════════════════════════
+       IMPORT — ボタン選択UI
+    ═══════════════════════════════════════════ */
+    .import-method-row {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0;
+    }
+    .method-card {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 7px; padding: 18px 10px;
+      border: 2px solid var(--c-gold); border-radius: 3px;
+      background: linear-gradient(160deg, #0e0e38 0%, #080820 100%);
+      cursor: pointer; min-height: 90px; text-align: center;
+      transition: transform .07s, box-shadow .07s, border-color .07s;
+      -webkit-user-select: none; user-select: none;
+    }
+    .method-card:active {
+      transform: scale(.95); box-shadow: 0 0 16px rgba(255,215,0,.3);
+    }
+    .method-card.cyan-card { border-color: var(--c-cyan); }
+    .method-card.cyan-card:active { box-shadow: 0 0 16px rgba(0,204,255,.4); }
+    .method-card-icon { font-size: 30px; }
+    .method-card-label { font-size: 13px; font-weight: 700; color: var(--c-gold-hi); }
+    .method-card.cyan-card .method-card-label { color: var(--c-cyan); }
+    .method-card-sub { font-size: 10px; color: var(--c-silver); }
+
+    /* ═══════════════════════════════════════════
+       RESPONSIVE — small screens
+    ═══════════════════════════════════════════ */
+    @media (max-height: 680px) {
+      .title-crystal { font-size: 44px; margin-bottom: 14px; }
+      .title-main    { font-size: 28px; }
+      .title-sub-line { margin-bottom: 28px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ★ Starfield -->
+<div id="starfield"></div>
+
+<!-- ★ App Content -->
+<div id="app"></div>
+
+<!-- ★ Status Bar -->
+<div id="status-bar" style="display:none">
+  <span class="status-txt" id="status-txt"></span>
+</div>
+
+<!-- ★ 常設ファイルinput（bodyに固定 → innerHTML再生成で消えない）-->
+<input type="file" id="global-file-inp" accept="image/*"
+  style="position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none">
+
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════════════════
+   STARFIELD GENERATOR
+═══════════════════════════════════════════════════════ */
+(function(){
+  const sf = document.getElementById('starfield');
+  for(let i = 0; i < 90; i++){
+    const s = document.createElement('div');
+    s.className = 'star';
+    const sz = Math.random() * 2.2 + .4;
+    s.style.cssText = `
+      width:${sz}px; height:${sz}px;
+      top:${Math.random()*100}%; left:${Math.random()*100}%;
+      --d:${(Math.random()*4+2).toFixed(1)}s;
+      --dl:${(Math.random()*6).toFixed(1)}s;
+      --lo:${(Math.random()*.15).toFixed(2)};
+      --hi:${(Math.random()*.6+.35).toFixed(2)};
+    `;
+    sf.appendChild(s);
+  }
+})();
+
+/* ═══════════════════════════════════════════════════════
+   STATE MACHINE
+═══════════════════════════════════════════════════════ */
+var S = {
+  TITLE:       'title',
+  MENU:        'menu',
+  API_SETUP:   'api_setup',
+  IMPORT:      'import',
+  CAPTURE:     'capture',   // ★ 新規: ライブスクリーンキャプチャ
+  ANALYZING:   'analyzing',
+  RESULTS:     'results',
+  POST_SELECT: 'post_select',
+  POST_VIEW:   'post_view',
+  HISTORY:     'history'
+};
+
+var state = {
+  screen:            S.TITLE,
+  apiKey:            sessionStorage.getItem('bs_key') || '',
+  imgDataUrl:        null,   // display
+  imgBase64:         null,   // API送信用
+  imgMediaType:      'image/jpeg',
+  analysisResult:    null,   // { extractedBooks, recommendedBooks, timestamp }
+  selectedBookNum:   null,
+  generatedPost:     null,
+  history:           [],
+  error:             null,
+  captureStream:     null   // ★ 新規: getDisplayMedia ストリーム
+};
+
+// history を localStorage から復元
+try { state.history = JSON.parse(localStorage.getItem('bs_hist') || '[]'); } catch(_){}
+
+/* ─── setState: 差分マージ → render ─── */
+function setState(patch) {
+  Object.assign(state, patch);
+  render();
+}
+
+/* ─── status bar ─── */
+function setStatus(msg) {
+  var bar = document.getElementById('status-bar');
+  var txt = document.getElementById('status-txt');
+  if(msg){
+    bar.style.display = 'flex';
+    txt.innerHTML = escH(msg) + '<span class="blink-cursor">_</span>';
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   RENDER ROUTER
+═══════════════════════════════════════════════════════ */
+function render() {
+  var app = document.getElementById('app');
+  app.scrollTop = 0;
+
+  // error overlay
+  var existErr = document.getElementById('err-overlay');
+  if(existErr) existErr.remove();
+
+  switch(state.screen) {
+    case S.TITLE:       app.innerHTML = tplTitle();       break;
+    case S.MENU:        app.innerHTML = tplMenu();        break;
+    case S.API_SETUP:   app.innerHTML = tplApiSetup();    break;
+    case S.IMPORT:      app.innerHTML = tplImport();      break;
+    case S.CAPTURE:     app.innerHTML = tplCapture();
+                        attachCaptureStream();             break; // ★ ストリームをvideoに接続
+    case S.ANALYZING:   app.innerHTML = tplAnalyzing();
+                        startLoadingMessages();            break;
+    case S.RESULTS:     app.innerHTML = tplResults();     break;
+    case S.POST_SELECT: app.innerHTML = tplPostSelect();  break;
+    case S.POST_VIEW:   app.innerHTML = tplPostView();    break;
+    case S.HISTORY:     app.innerHTML = tplHistory();     break;
+  }
+
+  if(state.error) showErrOverlay(state.error);
+  setStatus('');
+}
+
+/* ═══════════════════════════════════════════════════════
+   SCREEN TEMPLATES
+═══════════════════════════════════════════════════════ */
+
+/* ── TITLE ── */
+function tplTitle() {
+  return `
+  <div class="title-screen anim-fade">
+    <div class="title-crystal">💎</div>
+    <div class="title-badge">◆ Final Fantasy Style ◆</div>
+    <div class="title-main">Book Shot</div>
+    <div class="title-sub-line">書籍スクリーンショット解析システム</div>
+
+    <div class="win" style="width:100%;max-width:300px;padding:20px">
+      <button class="btn cyan" onclick="goMenu()">✨ 冒険をはじめる</button>
+      <div class="gap8"></div>
+      <button class="btn" onclick="goHistory()">📖 記録を振り返る</button>
+    </div>
+
+    <div class="press-start">▼ タップして開始 ▼</div>
+  </div>`;
+}
+
+/* ── MENU ── */
+function tplMenu() {
+  var hasKey = !!state.apiKey;
+  return `
+  <div class="screen anim-slide">
+    <div class="screen-hd">
+      <div class="screen-title">✦ メインメニュー ✦</div>
+      <div class="screen-sub">BookShot — 書籍解析システム</div>
+      <div style="margin-top:9px">
+        <span class="api-badge ${hasKey?'ok':'ng'}">
+          ${hasKey ? '● API接続済み' : '● API未設定'}
+        </span>
+      </div>
+    </div>
+    <div class="divider"></div>
+
+    <div class="menu-list">
+      <div class="menu-item" onclick="startAnalysis()">
+        <span class="menu-icon">📸</span>
+        <div class="menu-body">
+          <div class="menu-label">新しい解析</div>
+          <div class="menu-desc">スクリーンショットから書籍を自動認識</div>
+        </div>
+        <span class="menu-arr">▶</span>
+      </div>
+      <div class="menu-item" onclick="goHistory()">
+        <span class="menu-icon">📖</span>
+        <div class="menu-body">
+          <div class="menu-label">解析履歴</div>
+          <div class="menu-desc">${state.history.length}件の記録があります</div>
+        </div>
+        <span class="menu-arr">▶</span>
+      </div>
+      <div class="menu-item" onclick="goApiSetup()">
+        <span class="menu-icon">⚙️</span>
+        <div class="menu-body">
+          <div class="menu-label">APIキー設定</div>
+          <div class="menu-desc">Anthropic Claude APIキーを管理</div>
+        </div>
+        <span class="menu-arr">▶</span>
+      </div>
+    </div>
+
+    <div style="text-align:center;margin-top:20px">
+      <button class="back-btn" onclick="setState({screen:S.TITLE})">← タイトルへ戻る</button>
+    </div>
+  </div>`;
+}
+
+/* ── API SETUP ── */
+function tplApiSetup() {
+  return `
+  <div class="screen anim-slide">
+    <div class="screen-hd">
+      <button class="back-btn" onclick="setState({screen:S.MENU})">← 戻る</button>
+      <div class="screen-title" style="margin-top:12px">⚙️ APIキー設定</div>
+      <div class="screen-sub">Claude API への接続設定</div>
+    </div>
+    <div class="divider"></div>
+
+    <div class="win" style="margin-top:12px">
+      <div class="label">🔑 Anthropic Claude API Key</div>
+      <input id="key-inp" type="password" class="ff-input"
+        placeholder="sk-ant-api03-..."
+        value="${escH(state.apiKey)}"
+        autocomplete="off" spellcheck="false">
+      <div class="hint">※ このキーはセッション中のみ保持されます（閉じると削除）</div>
+    </div>
+
+    <div class="gap12"></div>
+    <button class="btn cyan" onclick="saveKey()">💾 保存する</button>
+    <div class="gap8"></div>
+    <!-- ★ 接続テストボタン -->
+    <button class="btn" id="test-btn" onclick="runApiTest()" ${!state.apiKey ? 'disabled' : ''}>
+      🔌 接続テスト（疎通確認）
+    </button>
+    <!-- ★ テスト結果表示欄 -->
+    <div id="test-result" style="margin-top:10px;font-size:13px;line-height:1.7;min-height:0"></div>
+    <div class="gap8"></div>
+    <button class="btn red" onclick="clearKey()">🗑️ キーを削除する</button>
+
+    <!-- ★ Brave向け注意 -->
+    <div class="no-capture-banner" style="margin-top:12px">
+      <span class="no-capture-icon">🦁</span>
+      <span><b style="color:var(--c-gold-hi)">Braveブラウザをお使いの場合:</b><br>
+      アドレスバーの🦁アイコン →「シールドを下げる」で接続できる場合があります。<br>
+      うまくいかない場合は <b>Chrome / Firefox / Safari</b> をお試しください。</span>
+    </div>
+
+    <div class="win" style="margin-top:16px">
+      <div class="small">
+        <div style="color:var(--c-gold-hi);font-weight:700;margin-bottom:7px">📋 APIキー取得方法</div>
+        ① <a href="https://console.anthropic.com" target="_blank" style="color:var(--c-cyan)">console.anthropic.com</a> にアクセス<br>
+        ② 左メニュー「API Keys」→「Create Key」<br>
+        ③ 生成されたキーをコピーして上に貼り付け
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ── IMPORT ── */
+function tplImport() {
+  var hasImg   = !!state.imgDataUrl;
+  // getDisplayMedia が使えるか実行時チェック
+  var canCap   = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+  // iPhone Safari などモバイルは概ね非対応
+  var isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
+
+  return `
+  <div class="screen anim-slide">
+    <div class="screen-hd">
+      <button class="back-btn" onclick="setState({screen:S.MENU})">← 戻る</button>
+      <div class="screen-title" style="margin-top:12px">📸 画像を取り込む</div>
+      <div class="screen-sub">書籍が写った画面をキャプチャ or 選択</div>
+    </div>
+    <div class="divider"></div>
+
+    ${hasImg ? `
+    <!-- ▼ 取り込み済みプレビュー -->
+    <div class="img-zone" onclick="pickFile()">
+      <img src="${state.imgDataUrl}" alt="取り込んだ画像">
+    </div>
+    <button class="btn cyan" onclick="doAnalyze()">⚔️ AIで書籍解析スタート</button>
+    <div class="gap8"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      ${canCap && !isMobile
+        ? `<button class="btn ghost" onclick="startCapture()">📱 撮り直す</button>`
+        : `<button class="btn ghost" onclick="pickFile()">🔄 選び直す</button>`}
+      <button class="btn ghost" onclick="pickFile()">📁 ライブラリ</button>
+    </div>
+
+    ` : `
+    <!-- ▼ 取得方法を選ぶカード -->
+    <div class="import-method-row">
+
+      ${canCap && !isMobile ? `
+      <!-- PC/Mac: スクリーンキャプチャ -->
+      <div class="method-card cyan-card" onclick="startCapture()">
+        <span class="method-card-icon">🖥️</span>
+        <span class="method-card-label">スクリーンショットを撮る</span>
+        <span class="method-card-sub">画面をその場でキャプチャ</span>
+      </div>
+      ` : `
+      <!-- iPhoneなど非対応端末: 代替カード -->
+      <div class="method-card" style="opacity:.5;cursor:not-allowed">
+        <span class="method-card-icon">🖥️</span>
+        <span class="method-card-label">スクリーンショットを撮る</span>
+        <span class="method-card-sub">この端末では非対応</span>
+      </div>
+      `}
+
+      <div class="method-card" onclick="pickFile()">
+        <span class="method-card-icon">📁</span>
+        <span class="method-card-label">ライブラリから選ぶ</span>
+        <span class="method-card-sub">保存済みの画像を選択</span>
+      </div>
+
+    </div>
+
+    ${isMobile ? `
+    <div class="no-capture-banner">
+      <span class="no-capture-icon">ℹ️</span>
+      <span>iPhone/iPad では画面キャプチャAPIが未対応です。<br>
+      先にスクリーンショットを撮影してから「ライブラリから選ぶ」をご利用ください。</span>
+    </div>
+    ` : (!canCap ? `
+    <div class="no-capture-banner">
+      <span class="no-capture-icon">ℹ️</span>
+      <span>このブラウザは画面キャプチャに対応していません。<br>
+      Chrome / Edge / Firefox をお試しください。</span>
+    </div>
+    ` : '')}
+    `}
+
+    <div class="win" style="margin-top:14px">
+      <div class="small">
+        <div style="color:var(--c-gold-hi);font-weight:700;margin-bottom:6px">💡 おすすめの画像</div>
+        • 書店・図書館の棚のスクリーンショット<br>
+        • 読書アプリのライブラリ画面（Kindle等）<br>
+        • 複数冊OK！AIがすべて自動認識します
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ── CAPTURE ── ライブスクリーンキャプチャ画面 */
+function tplCapture() {
+  return `
+  <div class="capture-screen anim-fade">
+    <div class="screen-hd" style="width:100%">
+      <button class="back-btn" onclick="stopCapture()">← キャンセル</button>
+      <div class="screen-title" style="margin-top:10px">🖥️ 画面をキャプチャ</div>
+      <div class="screen-sub">キャプチャしたい画面が映ったら📸ボタンを押してください</div>
+    </div>
+
+    <!-- ライブプレビュー -->
+    <div class="capture-preview" style="width:100%">
+      <video id="capture-video" autoplay playsinline muted></video>
+      <div class="rec-badge"><span class="rec-dot"></span>LIVE</div>
+    </div>
+
+    <!-- シャッターボタン -->
+    <div class="capture-shutter" onclick="captureFrame()">📸</div>
+    <div style="font-size:12px;color:var(--c-silver);letter-spacing:.08em;margin-bottom:12px">
+      タップして取り込む
+    </div>
+
+    <button class="btn ghost" style="width:100%" onclick="stopCapture()">← キャンセルして戻る</button>
+  </div>`;
+}
+
+/* videoにストリームを接続（render()後に呼ぶ）*/
+function attachCaptureStream() {
+  if(!state.captureStream) return;
+  var vid = document.getElementById('capture-video');
+  if(!vid) return;
+  vid.srcObject = state.captureStream;
+  vid.play().catch(function(){});
+}
+
+/* ═══════════════════════════════════════════════════════
+   SCREEN CAPTURE ACTIONS
+═══════════════════════════════════════════════════════ */
+async function startCapture() {
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia){
+    showErr('このブラウザは画面キャプチャに対応していません。\nChrome / Edge / Firefox をお使いください。');
+    return;
+  }
+  try {
+    var stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { cursor: 'always', displaySurface: 'window' },
+      audio: false
+    });
+    // ストリームを state に保存してから CAPTURE 画面へ遷移
+    state.captureStream = stream;
+    setState({ screen: S.CAPTURE });
+
+    // ユーザーが「共有を停止」した場合のハンドリング
+    stream.getVideoTracks()[0].addEventListener('ended', function(){
+      stopCapture();
+    });
+  } catch(err) {
+    if(err.name === 'NotAllowedError' || err.name === 'AbortError'){
+      // ユーザーがキャンセルした — 何もしない
+      return;
+    }
+    showErr('画面キャプチャの開始に失敗しました。\n' + (err.message || err.name));
+  }
+}
+
+function captureFrame() {
+  var vid = document.getElementById('capture-video');
+  if(!vid || !vid.videoWidth){
+    showErr('映像がまだ準備できていません。少し待ってから再試行してください。');
+    return;
+  }
+  // キャプチャ実行
+  var w = vid.videoWidth, h = vid.videoHeight;
+  // 大きすぎる場合は縮小（API制限 & 転送量対策）
+  var maxW = 1920;
+  if(w > maxW){ h = Math.round(h * maxW / w); w = maxW; }
+
+  var canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  canvas.getContext('2d').drawImage(vid, 0, 0, w, h);
+
+  var dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+  var b64     = dataUrl.split(',')[1];
+
+  // ストリームを停止してからIMPORTへ
+  stopStream();
+  setState({
+    screen:       S.IMPORT,
+    imgDataUrl:   dataUrl,
+    imgBase64:    b64,
+    imgMediaType: 'image/jpeg',
+    captureStream: null
+  });
+}
+
+function stopCapture() {
+  stopStream();
+  setState({ screen: S.IMPORT, captureStream: null });
+}
+
+function stopStream() {
+  if(state.captureStream){
+    state.captureStream.getTracks().forEach(function(t){ t.stop(); });
+    state.captureStream = null;
+  }
+}
+
+/* ── ANALYZING ── */
+function tplAnalyzing() {
+  return `
+  <div class="loading-screen anim-fade">
+    <div class="loading-crystal">💎</div>
+    <div class="loading-title">解析中...</div>
+    <div class="bar-wrap"><div class="bar-fill"></div></div>
+    <div class="loading-msg" id="load-msg">画像を認識しています...</div>
+  </div>`;
+}
+
+/* ── RESULTS ── */
+function tplResults() {
+  var r = state.analysisResult;
+  if(!r) return tplMenu();
+  var ex = r.extractedBooks || [], rec = r.recommendedBooks || [];
+  return `
+  <div class="screen anim-slide">
+    <div class="screen-hd">
+      <button class="back-btn" onclick="setState({screen:S.MENU})">← メニューへ</button>
+      <div class="screen-title" style="margin-top:12px">✨ 解析結果</div>
+      <div class="screen-sub">解析: ${ex.length}冊 ／ AI提案: ${rec.length}冊</div>
+    </div>
+    <div class="divider"></div>
+
+    <!-- 抽出された書籍 -->
+    ${ex.length ? `
+    <div style="margin-bottom:6px">
+      <div class="sec-hd">
+        <span class="sec-hd-icon">📸</span>
+        <span class="sec-hd-txt">スクリーンショットの書籍</span>
+        <span class="sec-hd-cnt">${ex.length}冊</span>
+      </div>
+      ${ex.map(b => cardHtml(b, 'ex')).join('')}
+    </div>
+    ` : `
+    <div class="win" style="margin-bottom:12px;text-align:center">
+      <div style="font-size:32px;margin-bottom:8px">🔍</div>
+      <div class="small">書籍を認識できませんでした。<br>別の画像で試してみてください。</div>
+    </div>
+    `}
+
+    <!-- AI推薦書籍 -->
+    ${rec.length ? `
+    <div style="margin-bottom:6px">
+      <div class="sec-hd">
+        <span class="sec-hd-icon">💡</span>
+        <span class="sec-hd-txt">AIのおすすめ書籍</span>
+        <span class="sec-hd-cnt">${rec.length}冊</span>
+      </div>
+      ${rec.map(b => cardHtml(b, 'rec')).join('')}
+    </div>
+    ` : ''}
+
+    <div class="divider"></div>
+
+    <!-- SNS セクション -->
+    <div class="win" style="margin-bottom:20px">
+      <div class="center" style="margin-bottom:12px">
+        <div style="color:var(--c-gold-hi);font-weight:700;font-size:15px">📱 SNS投稿文を生成する</div>
+        <div class="small" style="margin-top:4px">気に入った本の紹介文を自動作成</div>
+      </div>
+      <button class="btn cyan" onclick="goPostSelect()">✍️ 投稿文を作る</button>
+    </div>
+
+    <button class="btn" onclick="goImport()">📸 新しい画像を解析する</button>
+  </div>`;
+}
+
+function cardHtml(b, type) {
+  var pts = (b.recommendationPoints || []);
+  return `
+  <div class="book-card">
+    <div class="book-head">
+      <div class="book-num">${b.number}</div>
+      <div class="book-info">
+        <div class="book-title">${escH(b.title)}</div>
+        <div class="book-author">著: ${escH(b.author)}</div>
+      </div>
+      <span class="book-badge ${type==='ex'?'badge-ex':'badge-rec'}">
+        ${type==='ex'?'解析':'AI推薦'}
+      </span>
+    </div>
+    <div class="book-pts">
+      ${pts.map(p => `
+      <div class="book-pt">
+        <span class="pt-star">★</span>
+        <span>${escH(p)}</span>
+      </div>`).join('')}
+    </div>
+  </div>`;
+}
+
+/* ── POST SELECT ── */
+function tplPostSelect() {
+  var r = state.analysisResult;
+  var all = [...(r.extractedBooks||[]), ...(r.recommendedBooks||[])];
+  var sel = state.selectedBookNum;
+  var selBook = all.find(b => b.number === sel);
+  return `
+  <div class="screen anim-slide">
+    <div class="screen-hd">
+      <button class="back-btn" onclick="setState({screen:S.RESULTS})">← 結果へ戻る</button>
+      <div class="screen-title" style="margin-top:12px">📱 SNS投稿文生成</div>
+      <div class="screen-sub">投稿する本の番号を選んでください</div>
+    </div>
+    <div class="divider"></div>
+
+    <div class="win" style="margin-top:12px">
+      <div style="color:var(--c-gold-hi);font-weight:700;font-size:14px;margin-bottom:12px">番号を選択 ▼</div>
+      <div class="pick-grid">
+        ${all.map(b => `
+        <div class="pick-btn ${sel===b.number?'sel':''}" onclick="pickBook(${b.number})">
+          ${b.number}
+        </div>`).join('')}
+      </div>
+    </div>
+
+    ${selBook ? `
+    <div class="win" style="margin-top:10px">
+      <div style="font-size:13px;color:var(--c-silver)">
+        <span style="color:var(--c-gold-hi);font-weight:700">選択中: </span>
+        ${escH(selBook.title)}
+        <span style="color:var(--c-dim)"> / ${escH(selBook.author)}</span>
+      </div>
+    </div>
+    ` : ''}
+
+    <div class="gap12"></div>
+    <button class="btn cyan" ${sel===null?'disabled':''} onclick="makePost()">
+      ✨ 投稿文を生成する
+    </button>
+    <div class="gap8"></div>
+    <button class="btn ghost" onclick="setState({screen:S.RESULTS})">← キャンセル</button>
+  </div>`;
+}
+
+/* ── POST VIEW ── */
+function tplPostView() {
+  return `
+  <div class="screen anim-slide">
+    <div class="screen-hd">
+      <button class="back-btn" onclick="setState({screen:S.POST_SELECT})">← 選択へ戻る</button>
+      <div class="screen-title" style="margin-top:12px">✍️ 投稿文プレビュー</div>
+      <div class="screen-sub">コピーしてSNSに貼り付けてください</div>
+    </div>
+    <div class="divider"></div>
+
+    <div class="gap12"></div>
+    <div class="post-box" id="post-content">${escH(state.generatedPost||'')}</div>
+
+    <div class="gap12"></div>
+    <button class="btn cyan" onclick="copyPost()">📋 テキストをコピー</button>
+    <div class="gap8"></div>
+    <button class="btn green" onclick="sharePost()">📤 共有する</button>
+    <div class="gap8"></div>
+    <button class="btn" onclick="goPostSelect()">🔄 別の本を選ぶ</button>
+    <div class="gap8"></div>
+    <button class="btn ghost" onclick="setState({screen:S.RESULTS})">← 解析結果に戻る</button>
+  </div>`;
+}
+
+/* ── HISTORY ── */
+function tplHistory() {
+  var hist = state.history.slice().reverse();
+  return `
+  <div class="screen anim-slide">
+    <div class="screen-hd">
+      <button class="back-btn" onclick="setState({screen:S.MENU})">← 戻る</button>
+      <div class="screen-title" style="margin-top:12px">📖 解析履歴</div>
+      <div class="screen-sub">${state.history.length}件の記録</div>
+    </div>
+    <div class="divider"></div>
+
+    ${hist.length === 0 ? `
+    <div class="win" style="margin-top:16px;text-align:center;padding:28px">
+      <div style="font-size:44px;margin-bottom:12px">📭</div>
+      <div class="small">まだ解析履歴がありません</div>
+      <div class="gap12"></div>
+      <button class="btn cyan" onclick="startAnalysis()">📸 最初の解析を始める</button>
+    </div>
+    ` : `
+    ${hist.map((item, i) => {
+      var origIdx = state.history.length - 1 - i;
+      var titles = (item.extractedBooks||[]).slice(0,2).map(b=>b.title).join('、');
+      if((item.extractedBooks||[]).length > 2) titles += '...';
+      return `
+      <div class="hist-card" onclick="loadHist(${origIdx})">
+        ${item.thumbnailDataUrl
+          ? `<img class="hist-thumb" src="${item.thumbnailDataUrl}" alt="">`
+          : `<div class="hist-no-thumb">📚</div>`}
+        <div class="hist-info">
+          <div class="hist-date">${fmtDate(item.timestamp)}</div>
+          <div class="hist-count">書籍 ${(item.extractedBooks||[]).length}冊 + 提案 ${(item.recommendedBooks||[]).length}冊</div>
+          <div class="hist-titles">${escH(titles)}</div>
+        </div>
+        <span class="menu-arr">▶</span>
+      </div>`;
+    }).join('')}
+
+    <div class="gap8"></div>
+    <button class="btn red" onclick="clearHist()">🗑️ 履歴をすべて削除</button>
+    `}
+  </div>`;
+}
+
+/* ═══════════════════════════════════════════════════════
+   ERROR OVERLAY
+═══════════════════════════════════════════════════════ */
+function showErrOverlay(msg) {
+  var el = document.createElement('div');
+  el.id = 'err-overlay';
+  el.className = 'err-overlay';
+  el.innerHTML = `
+    <div class="win err-box anim-slide">
+      <div class="err-icon">⚠️</div>
+      <div class="err-title">エラーが発生しました</div>
+      <div class="err-msg">${escH(msg)}</div>
+      <button class="btn red" onclick="dismissErr()">閉じる</button>
+    </div>`;
+  document.body.appendChild(el);
+}
+
+function dismissErr() {
+  state.error = null;
+  var el = document.getElementById('err-overlay');
+  if(el) el.remove();
+}
+
+/* ═══════════════════════════════════════════════════════
+   TOAST
+═══════════════════════════════════════════════════════ */
+function toast(msg) {
+  var el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 1900);
+}
+
+/* ═══════════════════════════════════════════════════════
+   LOADING MESSAGES
+═══════════════════════════════════════════════════════ */
+function startLoadingMessages() {
+  var msgs = [
+    '画像を認識しています...',
+    'AIが書籍情報を解析中...',
+    'おすすめポイントを生成中...',
+    '関連書籍を検索しています...',
+    'もうすぐ完了します...'
+  ];
+  var i = 0;
+  var iv = setInterval(function(){
+    if(state.screen !== S.ANALYZING){ clearInterval(iv); return; }
+    i = (i+1) % msgs.length;
+    var el = document.getElementById('load-msg');
+    if(el) el.textContent = msgs[i];
+  }, 2200);
+}
+
+/* ═══════════════════════════════════════════════════════
+   NAVIGATION ACTIONS
+═══════════════════════════════════════════════════════ */
+function goMenu()       { setState({screen: S.MENU}); }
+function goHistory()    { setState({screen: S.HISTORY}); }
+function goApiSetup()   { setState({screen: S.API_SETUP}); }
+function goImport()     {
+  setState({screen: S.IMPORT, imgDataUrl:null, imgBase64:null});
+}
+function goPostSelect() { setState({screen: S.POST_SELECT, selectedBookNum: null}); }
+
+function startAnalysis() {
+  if(!state.apiKey){
+    state.error = 'APIキーが未設定です。\nメニューの「APIキー設定」からClaude APIキーを入力してください。';
+    setState({screen: S.API_SETUP});
+    return;
+  }
+  goImport();
+}
+
+/* ═══════════════════════════════════════════════════════
+   API 接続テスト（段階的診断）
+═══════════════════════════════════════════════════════ */
+async function runApiTest() {
+  var key = state.apiKey;
+  if(!key){ showErr('先にAPIキーを入力して保存してください。'); return; }
+
+  var btn = document.getElementById('test-btn');
+  var box = document.getElementById('test-result');
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ テスト中...'; }
+
+  function log(html){ if(box) box.innerHTML += html + '<br>'; }
+  if(box) box.innerHTML = '';
+
+  // ── STEP 1: ネットワーク到達確認（no-cors で Preflight なし）
+  log('<span style="color:var(--c-silver)">① api.anthropic.com への到達確認...</span>');
+  try {
+    await fetch('https://api.anthropic.com', { method: 'HEAD', mode: 'no-cors' });
+    log('<span style="color:var(--c-green)">✓ サーバーに到達できます</span>');
+  } catch(e) {
+    log('<span style="color:var(--c-red)">✗ サーバーに到達できません（ネットワーク/ファイアウォール）</span>');
+    log('<span style="color:var(--c-silver);font-size:11px">→ VPN・企業ネットワークを外してお試しください</span>');
+    if(btn){ btn.disabled = false; btn.textContent = '🔌 接続テスト（疎通確認）'; }
+    return;
+  }
+
+  // ── STEP 2: CORS + API key テスト（軽量テキストリクエスト）
+  log('<span style="color:var(--c-silver)">② APIキーと CORS の確認...</span>');
+  try {
+    var res = await fetch('https://api.anthropic.com/v1/messages', {
+      method:      'POST',
+      mode:        'cors',
+      credentials: 'omit',
+      headers: {
+        'Content-Type':                             'application/json',
+        'x-api-key':                                key,
+        'anthropic-version':                        '2023-06-01',
+        'anthropic-dangerous-direct-browser-calls': 'true'
+      },
+      body: JSON.stringify({
+        model:      'claude-haiku-4-5-20251001',  // 軽量モデルでテスト
+        max_tokens: 5,
+        messages: [{ role: 'user', content: 'hi' }]
+      })
+    });
+
+    if(res.ok) {
+      log('<span style="color:var(--c-green)">✓ APIキー有効・CORS OK</span>');
+      log('<span style="color:var(--c-green)">✓ 接続テスト成功！解析を始められます 🎉</span>');
+      toast('✓ 接続テスト成功！');
+    } else {
+      var ej = {}; try{ ej = await res.json(); }catch(_){}
+      var em = (ej.error && ej.error.message) || ('HTTP ' + res.status);
+      if(res.status === 401){
+        log('<span style="color:var(--c-red)">✗ APIキーが無効(401) → キーを再確認してください</span>');
+      } else if(res.status === 403){
+        log('<span style="color:var(--c-red)">✗ アクセス拒否(403) → プランやキーの権限を確認</span>');
+      } else {
+        log('<span style="color:var(--c-red)">✗ APIエラー(' + res.status + '): ' + escH(em) + '</span>');
+      }
+    }
+  } catch(e) {
+    if(e.message.includes('fetch') || e.name === 'TypeError') {
+      log('<span style="color:var(--c-red)">✗ CORS ブロック検出（Failed to fetch）</span>');
+      log('<span style="color:var(--c-gold)">→ 【Brave】アドレスバーの🦁→「シールドを下げる」</span>');
+      log('<span style="color:var(--c-gold)">→ または Chrome / Firefox / Safari をお使いください</span>');
+    } else {
+      log('<span style="color:var(--c-red)">✗ 不明なエラー: ' + escH(e.message) + '</span>');
+    }
+  }
+
+  if(btn){ btn.disabled = false; btn.textContent = '🔌 接続テスト（疎通確認）'; }
+}
+
+/* ═══════════════════════════════════════════════════════
+   API KEY
+═══════════════════════════════════════════════════════ */
+function saveKey() {
+  var val = (document.getElementById('key-inp').value || '').trim();
+  if(!val){ showErr('APIキーを入力してください。'); return; }
+  if(!val.startsWith('sk-ant-')){
+    showErr('有効なAPIキー形式ではありません。\n"sk-ant-" で始まるキーを入力してください。');
+    return;
+  }
+  sessionStorage.setItem('bs_key', val);
+  state.apiKey = val;
+  toast('✓ APIキーを保存しました');
+  setTimeout(() => setState({screen: S.MENU}), 900);
+}
+
+function clearKey() {
+  sessionStorage.removeItem('bs_key');
+  state.apiKey = '';
+  setState({screen: S.MENU});
+}
+
+/* ═══════════════════════════════════════════════════════
+   FILE HANDLING — 常設inputを使ってbody破壊に強くする
+═══════════════════════════════════════════════════════ */
+function pickFile() {
+  var inp = document.getElementById('global-file-inp');
+  if(!inp){ console.error('global-file-inp not found'); return; }
+  // value をリセットして同一ファイルでも onChange が発火するようにする
+  inp.value = '';
+  inp.click();
+}
+
+function onGlobalFileChange(ev) {
+  var file = ev.target.files && ev.target.files[0];
+  if(!file) return;
+
+  // media type 判定
+  var mt = file.type || 'image/jpeg';
+  var allowed = ['image/jpeg','image/png','image/gif','image/webp'];
+  if(!allowed.includes(mt)) mt = 'image/jpeg';
+
+  var reader = new FileReader();
+  reader.onerror = function(){ showErr('ファイルの読み込みに失敗しました。別の画像をお試しください。'); };
+  reader.onload = function(e){
+    var dataUrl = e.target.result;
+    var b64     = dataUrl.split(',')[1];
+    setState({
+      imgDataUrl:   dataUrl,
+      imgBase64:    b64,
+      imgMediaType: mt
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
+// ★ 常設input への change イベントを一度だけ登録（DOMContentLoaded 後）
+document.getElementById('global-file-inp').addEventListener('change', onGlobalFileChange);
+
+/* ═══════════════════════════════════════════════════════
+   CLAUDE API CALL
+═══════════════════════════════════════════════════════ */
+async function doAnalyze() {
+  if(!state.imgBase64){ showErr('画像が選択されていません。'); return; }
+
+  setState({screen: S.ANALYZING});
+
+  try {
+    var result = await callClaude(state.imgBase64, state.imgMediaType, state.apiKey);
+
+    // 採番
+    var num = 1;
+    (result.extractedBooks  || []).forEach(b => { b.number = num++; });
+    (result.recommendedBooks || []).forEach(b => { b.number = num++; });
+    result.timestamp = Date.now();
+
+    // 履歴に保存（サムネイルは縮小して保存）
+    var thumb = await resizeDataUrl(state.imgDataUrl, 120);
+    var histItem = Object.assign({}, result, { thumbnailDataUrl: thumb });
+    state.history.push(histItem);
+    try { localStorage.setItem('bs_hist', JSON.stringify(state.history.slice(-30))); } catch(_){}
+
+    setState({ screen: S.RESULTS, analysisResult: result });
+
+  } catch(err) {
+    setState({ screen: S.IMPORT });
+    showErr('解析中にエラーが発生しました。\n\n' + (err.message || '不明なエラー'));
+  }
+}
+
+async function callClaude(b64, mediaType, apiKey) {
+  var prompt = `この画像に写っている書籍をすべて解析し、以下のJSON形式のみで回答してください（説明文やコードブロックは不要）：
+
+{
+  "extractedBooks": [
+    {
+      "title": "書籍タイトル",
+      "author": "著者名",
+      "recommendationPoints": ["魅力ポイント1（具体的に）", "魅力ポイント2（具体的に）", "魅力ポイント3（具体的に）"]
+    }
+  ],
+  "recommendedBooks": [
+    {
+      "title": "関連書籍タイトル",
+      "author": "著者名",
+      "recommendationPoints": ["関連ポイント1", "関連ポイント2", "関連ポイント3"]
+    }
+  ]
+}
+
+ルール：
+- 画像内の全書籍を extractedBooks に記載（書籍がない場合は空配列）
+- recommendedBooks は抽出書籍に関連する3冊を提案
+- recommendationPoints は各3件、日本語で具体的かつ魅力的に
+- JSONのみ返答。前置き・後書き・コードブロック不要`;
+
+  // ── fetch (CORS明示 + credentials除外)
+  var res;
+  try {
+    res = await fetch('https://api.anthropic.com/v1/messages', {
+      method:      'POST',
+      mode:        'cors',        // CORS明示
+      credentials: 'omit',       // cookie送信しない（CORS対策）
+      headers: {
+        'Content-Type':                             'application/json',
+        'x-api-key':                                apiKey,
+        'anthropic-version':                        '2023-06-01',
+        'anthropic-dangerous-direct-browser-calls': 'true'
+      },
+      body: JSON.stringify({
+        model:      'claude-opus-4-6',   // ★ 修正: 存在するモデル名に変更
+        max_tokens: 4096,
+        messages: [{
+          role: 'user',
+          content: [
+            {
+              type:   'image',
+              source: { type: 'base64', media_type: mediaType, data: b64 }
+            },
+            { type: 'text', text: prompt }
+          ]
+        }]
+      })
+    });
+  } catch(netErr) {
+    // ネットワーク層のエラー（CORS preflightブロックなど）
+    throw new Error(
+      'ネットワークエラー: ' + netErr.message + '\n\n' +
+      '【原因の可能性】\n' +
+      '① Braveブラウザのシールド → アドレスバーの🦁をクリックし「シールドを下げる」\n' +
+      '② CORS制限 → Chrome / Firefox / Safari で試してください\n' +
+      '③ ファイアウォール / VPN → ネットワーク設定を確認\n\n' +
+      '【即時確認】APIキー設定画面の「接続テスト」ボタンで診断できます'
+    );
+  }
+
+  if(!res.ok) {
+    var errJson = {};
+    try { errJson = await res.json(); } catch(_){}
+    var msg = (errJson.error && errJson.error.message) || ('HTTP ' + res.status);
+    if(res.status === 401) throw new Error('APIキーが無効です。キーを再確認してください。');
+    if(res.status === 403) throw new Error('APIアクセス拒否(403)。キーの権限を確認してください。');
+    if(res.status === 404) throw new Error('モデルが見つかりません(404)。APIプランを確認してください。');
+    if(res.status === 429) throw new Error('APIの利用制限に達しました(429)。しばらく待ってから再試行してください。');
+    if(res.status === 500) throw new Error('Anthropicサーバーエラー(500)。時間をおいて再試行してください。');
+    throw new Error('API通信エラー(' + res.status + '): ' + msg);
+  }
+
+  var data = await res.json();
+  var raw  = (data.content && data.content[0] && data.content[0].text) || '';
+
+  // JSONを抽出（```json...``` ブロックが含まれる場合に対応）
+  var jsonStr = raw.trim();
+  var m = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if(m) jsonStr = m[1].trim();
+
+  // 最初の{から最後の}まで抽出
+  var start = jsonStr.indexOf('{');
+  var end   = jsonStr.lastIndexOf('}');
+  if(start >= 0 && end > start) jsonStr = jsonStr.slice(start, end+1);
+
+  var parsed = JSON.parse(jsonStr);
+  return {
+    extractedBooks:  (parsed.extractedBooks  || []).map(sanitizeBook),
+    recommendedBooks:(parsed.recommendedBooks || []).map(sanitizeBook)
+  };
+}
+
+function sanitizeBook(b) {
+  return {
+    title:  b.title  || '不明',
+    author: b.author || '著者不明',
+    recommendationPoints: Array.isArray(b.recommendationPoints)
+      ? b.recommendationPoints.slice(0,3).map(String)
+      : ['詳細情報なし', '詳細情報なし', '詳細情報なし']
+  };
+}
+
+/* ═══════════════════════════════════════════════════════
+   SNS POST
+═══════════════════════════════════════════════════════ */
+function pickBook(num) {
+  setState({ selectedBookNum: num });
+}
+
+function makePost() {
+  var r   = state.analysisResult;
+  var all = [...(r.extractedBooks||[]), ...(r.recommendedBooks||[])];
+  var b   = all.find(x => x.number === state.selectedBookNum);
+  if(!b) return;
+
+  var pts = b.recommendationPoints || [];
+  var tag1 = b.title.replace(/[\s　]/g,'_').replace(/[「」『』【】《》〈〉]/g,'');
+  var tag2 = b.author.replace(/[\s　]/g,'_');
+
+  var post =
+    `『${b.title}』\n著者：${b.author} の本を読みました📚\n\n` +
+    `おすすめポイント：\n` +
+    pts.map(p => `✨ ${p}`).join('\n') +
+    `\n\n#読書記録 #${tag1} #${tag2} #BookShot`;
+
+  setState({ screen: S.POST_VIEW, generatedPost: post });
+}
+
+function copyPost() {
+  var text = state.generatedPost || '';
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(() => toast('✓ コピーしました！')).catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text) {
+  var el = document.createElement('textarea');
+  el.value = text; el.style.position = 'fixed'; el.style.opacity = '0';
+  document.body.appendChild(el); el.focus(); el.select();
+  try { document.execCommand('copy'); toast('✓ コピーしました！'); } catch(_){ toast('コピーに失敗しました'); }
+  document.body.removeChild(el);
+}
+
+function sharePost() {
+  if(navigator.share){
+    navigator.share({ text: state.generatedPost || '' })
+      .catch(() => copyPost());
+  } else {
+    copyPost();
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   HISTORY
+═══════════════════════════════════════════════════════ */
+function loadHist(idx) {
+  var item = state.history[idx];
+  if(!item) return;
+  setState({ screen: S.RESULTS, analysisResult: item });
+}
+
+function clearHist() {
+  if(!confirm('全ての履歴を削除しますか？')) return;
+  state.history = [];
+  try { localStorage.removeItem('bs_hist'); } catch(_){}
+  setState({ screen: S.HISTORY });
+}
+
+/* ═══════════════════════════════════════════════════════
+   ERROR HELPER
+═══════════════════════════════════════════════════════ */
+function showErr(msg) {
+  state.error = msg;
+  var existing = document.getElementById('err-overlay');
+  if(existing) existing.remove();
+  showErrOverlay(msg);
+}
+
+/* ═══════════════════════════════════════════════════════
+   UTILITIES
+═══════════════════════════════════════════════════════ */
+function escH(s) {
+  if(!s) return '';
+  return String(s)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#039;');
+}
+
+function fmtDate(ts) {
+  var d = new Date(ts);
+  var pad = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// 画像を縮小してデータURLを返す（履歴サムネイル用）
+function resizeDataUrl(dataUrl, maxSize) {
+  return new Promise(function(resolve){
+    if(!dataUrl){ resolve(null); return; }
+    var img = new Image();
+    img.onload = function(){
+      var w = img.width, h = img.height;
+      if(w > h){ h = Math.round(h * maxSize/w); w = maxSize; }
+      else      { w = Math.round(w * maxSize/h); h = maxSize; }
+      var c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(c.toDataURL('image/jpeg', .75));
+    };
+    img.onerror = function(){ resolve(null); };
+    img.src = dataUrl;
+  });
+}
+
+/* ═══════════════════════════════════════════════════════
+   BOOT
+═══════════════════════════════════════════════════════ */
+render();
+</script>
+</body>
+</html>
