@@ -2,11 +2,11 @@
  * BookShot — ローカルプロキシサーバー
  * Node.js 標準ライブラリのみ使用（npm install 不要）
  *
- * 起動方法: ANTHROPIC_API_KEY=... node server.js
+ * 起動方法: GEMINI_API_KEY=... node server.js
  * ブラウザで開く: http://localhost:3000
  *
  * 役割:
- *   ブラウザ → localhost:3000/api/analyze → api.anthropic.com
+ *   ブラウザ → localhost:3000/api/analyze → generativelanguage.googleapis.com
  *   ※ ブラウザからは同一オリジン通信なので CORS なし
  */
 
@@ -17,13 +17,32 @@ const https = require('https');
 const fs    = require('fs');
 const path  = require('path');
 
-const PORT   = 3000;
-const DIR    = __dirname;   // server.js と同じフォルダ
-const API_KEY = process.env.ANTHROPIC_API_KEY || '';
+const PORT    = 3000;
+const DIR     = __dirname;
+const API_KEY = process.env.GEMINI_API_KEY || '';
+
+const GEMINI_HOSTNAME = 'generativelanguage.googleapis.com';
+const GEMINI_MODEL    = 'gemini-1.5-flash';
 
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(payload));
+}
+
+function geminiPathFor(model) {
+  return `/v1beta/models/${model}:generateContent?key=${API_KEY}`;
+}
+
+/* ── Gemini のレスポンスをフロントが期待する形式に変換 ── */
+function toFrontendFormat(geminiBody) {
+  try {
+    const parsed = JSON.parse(geminiBody);
+    if (parsed.error) return { error: parsed.error };
+    const text = parsed?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    return { content: [{ type: 'text', text }] };
+  } catch (e) {
+    return { error: { message: 'レスポンスの解析に失敗しました: ' + e.message } };
+  }
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -31,7 +50,6 @@ function sendJson(res, statusCode, payload) {
 ═══════════════════════════════════════════════════════ */
 const server = http.createServer((req, res) => {
 
-  // ── 全レスポンスに CORS ヘッダーを付与（ローカル確認用）
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -64,16 +82,16 @@ const server = http.createServer((req, res) => {
       mode: 'local-proxy',
       hasApiKey: !!API_KEY,
       message: API_KEY
-        ? 'BookShot local proxy is ready.'
-        : 'ANTHROPIC_API_KEY が未設定です。'
+        ? 'BookShot local proxy is ready (Gemini).'
+        : 'GEMINI_API_KEY が未設定です。'
     });
     return;
   }
 
-  // ── POST /api/analyze → Anthropic API へプロキシ
+  // ── POST /api/analyze → Gemini API へプロキシ
   if (req.method === 'POST' && req.url === '/api/analyze') {
     if (!API_KEY) {
-      sendJson(res, 503, { error: { message: 'ANTHROPIC_API_KEY が未設定です' } });
+      sendJson(res, 503, { error: { message: 'GEMINI_API_KEY が未設定です' } });
       return;
     }
 
@@ -83,116 +101,95 @@ const server = http.createServer((req, res) => {
       let parsed;
       try { parsed = JSON.parse(rawBody); }
       catch (e) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: { message: 'リクエストのJSONが不正です: ' + e.message } }));
+        sendJson(res, 400, { error: { message: 'リクエストのJSONが不正です: ' + e.message } });
         return;
       }
 
       const { imageBase64, mediaType, prompt } = parsed;
-
       if (!imageBase64) {
         sendJson(res, 400, { error: { message: 'imageBase64 が指定されていません' } });
         return;
       }
 
-      // Anthropic へのリクエストボディ
-      const anthropicBody = JSON.stringify({
-        model:      'claude-opus-4-6',
-        max_tokens: 4096,
-        messages: [{
+      const geminiBody = JSON.stringify({
+        contents: [{
           role: 'user',
-          content: [
-            {
-              type:   'image',
-              source: { type: 'base64', media_type: mediaType || 'image/jpeg', data: imageBase64 }
-            },
-            { type: 'text', text: prompt }
+          parts: [
+            { inline_data: { mime_type: mediaType || 'image/jpeg', data: imageBase64 } },
+            { text: prompt || '' }
           ]
         }]
       });
 
       const options = {
-        hostname: 'api.anthropic.com',
+        hostname: GEMINI_HOSTNAME,
         port:     443,
-        path:     '/v1/messages',
+        path:     geminiPathFor(GEMINI_MODEL),
         method:   'POST',
         headers: {
-          'Content-Type':      'application/json',
-          'Content-Length':    Buffer.byteLength(anthropicBody),
-          'x-api-key':         API_KEY,
-          'anthropic-version': '2023-06-01'
+          'Content-Type':   'application/json',
+          'Content-Length': Buffer.byteLength(geminiBody)
         }
       };
 
-      console.log(`[${new Date().toLocaleTimeString()}] Anthropic API へリクエスト送信...`);
+      console.log(`[${new Date().toLocaleTimeString()}] Gemini API へリクエスト送信...`);
 
       const apiReq = https.request(options, (apiRes) => {
         let responseBody = '';
         apiRes.on('data', chunk => { responseBody += chunk; });
         apiRes.on('end', () => {
           console.log(`[${new Date().toLocaleTimeString()}] レスポンス受信: HTTP ${apiRes.statusCode}`);
-          res.writeHead(apiRes.statusCode || 500, { 'Content-Type': 'application/json' });
-          res.end(responseBody);
+          const converted = toFrontendFormat(responseBody);
+          sendJson(res, apiRes.statusCode || 500, converted);
         });
       });
 
       apiReq.on('error', (e) => {
-        console.error('Anthropic API 通信エラー:', e.message);
-        res.writeHead(502, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: { message: 'Anthropic APIへの接続に失敗: ' + e.message } }));
+        console.error('Gemini API 通信エラー:', e.message);
+        sendJson(res, 502, { error: { message: 'Gemini APIへの接続に失敗: ' + e.message } });
       });
 
-      apiReq.write(anthropicBody);
+      apiReq.write(geminiBody);
       apiReq.end();
     });
     return;
   }
 
-  // ── POST /api/test → APIキー疎通確認（テキストのみ、画像なし）
+  // ── POST /api/test → API疎通確認
   if (req.method === 'POST' && req.url === '/api/test') {
     if (!API_KEY) {
-      sendJson(res, 503, { error: { message: 'ANTHROPIC_API_KEY が未設定です' } });
+      sendJson(res, 503, { error: { message: 'GEMINI_API_KEY が未設定です' } });
       return;
     }
 
-    let rawBody = '';
-    req.on('data', chunk => { rawBody += chunk; });
-    req.on('end', () => {
-      try { JSON.parse(rawBody || '{}'); } catch (e) {}
-
-      const testBody = JSON.stringify({
-        model:      'claude-haiku-4-5-20251001',
-        max_tokens: 5,
-        messages: [{ role: 'user', content: 'hi' }]
-      });
-
-      const options = {
-        hostname: 'api.anthropic.com',
-        port: 443,
-        path: '/v1/messages',
-        method: 'POST',
-        headers: {
-          'Content-Type':      'application/json',
-          'Content-Length':    Buffer.byteLength(testBody),
-          'x-api-key':         API_KEY,
-          'anthropic-version': '2023-06-01'
-        }
-      };
-
-      const apiReq = https.request(options, (apiRes) => {
-        let body = '';
-        apiRes.on('data', c => { body += c; });
-        apiRes.on('end', () => {
-          res.writeHead(apiRes.statusCode, { 'Content-Type': 'application/json' });
-          res.end(body);
-        });
-      });
-      apiReq.on('error', (e) => {
-        sendJson(res, 502, { error: { message: e.message } });
-      });
-      apiReq.write(testBody);
-      apiReq.end();
+    const testBody = JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: 'hi' }] }]
     });
+
+    const options = {
+      hostname: GEMINI_HOSTNAME,
+      port:     443,
+      path:     geminiPathFor(GEMINI_MODEL),
+      method:   'POST',
+      headers: {
+        'Content-Type':   'application/json',
+        'Content-Length': Buffer.byteLength(testBody)
+      }
+    };
+
+    const apiReq = https.request(options, (apiRes) => {
+      let body = '';
+      apiRes.on('data', c => { body += c; });
+      apiRes.on('end', () => {
+        const converted = toFrontendFormat(body);
+        sendJson(res, apiRes.statusCode, converted);
+      });
+    });
+    apiReq.on('error', (e) => {
+      sendJson(res, 502, { error: { message: e.message } });
+    });
+    apiReq.write(testBody);
+    apiReq.end();
     return;
   }
 
@@ -213,8 +210,8 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('╚═══════════════════════════════════════════╝');
   console.log('');
   if (!API_KEY) {
-    console.log('※ ANTHROPIC_API_KEY が未設定です。');
-    console.log('  例: ANTHROPIC_API_KEY=sk-ant-... node server.js');
+    console.log('※ GEMINI_API_KEY が未設定です。');
+    console.log('  例: GEMINI_API_KEY=AIza... node server.js');
     console.log('');
   }
   console.log('停止するには Ctrl + C を押してください');

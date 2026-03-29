@@ -11,32 +11,30 @@ export default {
     if (request.method === 'GET' && url.pathname === '/health') {
       return jsonResponse(
         {
-          ok: Boolean(env.ANTHROPIC_API_KEY),
+          ok: Boolean(env.GEMINI_API_KEY),
           mode: 'cloudflare-worker',
-          hasApiKey: Boolean(env.ANTHROPIC_API_KEY),
-          message: env.ANTHROPIC_API_KEY
-            ? 'BookShot Worker is ready.'
-            : 'ANTHROPIC_API_KEY is not configured.'
+          hasApiKey: Boolean(env.GEMINI_API_KEY),
+          message: env.GEMINI_API_KEY
+            ? 'BookShot Worker is ready (Gemini).'
+            : 'GEMINI_API_KEY is not configured.'
         },
-        env.ANTHROPIC_API_KEY ? 200 : 503,
+        env.GEMINI_API_KEY ? 200 : 503,
         corsHeaders
       );
     }
 
     if (request.method === 'POST' && url.pathname === '/api/test') {
-      if (!env.ANTHROPIC_API_KEY) {
+      if (!env.GEMINI_API_KEY) {
         return jsonResponse(
-          { error: { message: 'ANTHROPIC_API_KEY is not configured.' } },
+          { error: { message: 'GEMINI_API_KEY is not configured.' } },
           503,
           corsHeaders
         );
       }
 
-      return proxyAnthropic(
+      return proxyGemini(
         {
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 5,
-          messages: [{ role: 'user', content: 'hi' }]
+          contents: [{ role: 'user', parts: [{ text: 'hi' }] }]
         },
         env,
         corsHeaders
@@ -44,9 +42,9 @@ export default {
     }
 
     if (request.method === 'POST' && url.pathname === '/api/analyze') {
-      if (!env.ANTHROPIC_API_KEY) {
+      if (!env.GEMINI_API_KEY) {
         return jsonResponse(
-          { error: { message: 'ANTHROPIC_API_KEY is not configured.' } },
+          { error: { message: 'GEMINI_API_KEY is not configured.' } },
           503,
           corsHeaders
         );
@@ -71,25 +69,18 @@ export default {
         );
       }
 
-      return proxyAnthropic(
+      return proxyGemini(
         {
-          model: 'claude-opus-4-6',
-          max_tokens: 4096,
-          messages: [{
+          contents: [{
             role: 'user',
-            content: [
+            parts: [
               {
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: body.mediaType || 'image/jpeg',
+                inline_data: {
+                  mime_type: body.mediaType || 'image/jpeg',
                   data: body.imageBase64
                 }
               },
-              {
-                type: 'text',
-                text: body.prompt || ''
-              }
+              { text: body.prompt || '' }
             ]
           }]
         },
@@ -102,29 +93,37 @@ export default {
   }
 };
 
-async function proxyAnthropic(payload, env, corsHeaders) {
+async function proxyGemini(payload, env, corsHeaders) {
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const endpoint =
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${env.GEMINI_API_KEY}`;
+
+    const response = await fetch(endpoint, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload)
     });
 
-    const text = await response.text();
-    return new Response(text, {
-      status: response.status,
-      headers: {
-        ...corsHeaders,
-        'content-type': 'application/json; charset=utf-8'
-      }
-    });
+    const geminiData = await response.json();
+
+    if (!response.ok) {
+      return jsonResponse(
+        { error: { message: geminiData?.error?.message || 'Gemini API error' } },
+        response.status,
+        corsHeaders
+      );
+    }
+
+    // Gemini のレスポンスをフロントが期待する形式に変換
+    const text = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    return jsonResponse(
+      { content: [{ type: 'text', text }] },
+      200,
+      corsHeaders
+    );
   } catch (error) {
     return jsonResponse(
-      { error: { message: 'Anthropic request failed: ' + error.message } },
+      { error: { message: 'Gemini request failed: ' + error.message } },
       502,
       corsHeaders
     );
