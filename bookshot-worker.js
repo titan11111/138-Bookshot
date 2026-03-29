@@ -96,7 +96,7 @@ export default {
 async function proxyGemini(payload, env, corsHeaders) {
   try {
     const endpoint =
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${env.GEMINI_API_KEY}`;
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${env.GEMINI_API_KEY}`;
 
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -133,15 +133,19 @@ async function proxyGemini(payload, env, corsHeaders) {
 function buildCorsHeaders(request, env) {
   const origin = request.headers.get('Origin') || '';
   const allowedOrigins = (env.ALLOWED_ORIGINS ||
-    'https://titan11111.github.io,http://localhost:3000,http://127.0.0.1:3000,http://localhost:8787'
+    'https://titan11111.github.io,http://localhost:3000,http://127.0.0.1:3000,http://localhost:8787,http://127.0.0.1:5500,http://localhost:5500'
   )
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean);
 
+  // 許可リストに含まれるか、ローカル開発用ループバックならそのまま返す
+  const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
   const allowOrigin = allowedOrigins.includes(origin)
     ? origin
-    : allowedOrigins[0];
+    : isLocalhost
+      ? origin
+      : allowedOrigins[0];
 
   return {
     'Access-Control-Allow-Origin': allowOrigin,

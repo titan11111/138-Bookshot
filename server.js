@@ -22,7 +22,7 @@ const DIR     = __dirname;
 const API_KEY = process.env.GEMINI_API_KEY || '';
 
 const GEMINI_HOSTNAME = 'generativelanguage.googleapis.com';
-const GEMINI_MODEL    = 'gemini-1.5-flash';
+const GEMINI_MODEL    = 'gemini-2.0-flash';
 
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
